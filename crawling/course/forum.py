@@ -1,20 +1,12 @@
-import os, re, json, logging, requests
+import os, re, json, requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs, unquote
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from ..utils import get_logger
 
-# Configure logging (for development you can set level to DEBUG; adjust as needed for production)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        #logging.FileHandler("crawler_tu_berlin.log", mode='w', encoding='utf-8'),  # write to log file
-        logging.StreamHandler()  # remove this to disable terminal output
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_URL = "https://isis.tu-berlin.de"
 
@@ -128,7 +120,7 @@ def parse_discussion(driver, discussion_url, forum_folder):
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.forumpost"))
         )
     except Exception as e:
-        print("⚠️ No posts found in the discussion.")
+        logger.warning("⚠️ No posts found in the discussion.")
         return []
     
     soup = BeautifulSoup(driver.page_source, "html.parser")
