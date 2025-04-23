@@ -5,14 +5,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
 import time
 import os
-import logging
+from .utils import get_logger
 
-# Configure logging (for development you can set level to DEBUG; adjust as needed for production)
-logging.basicConfig(
-    level=logging.INFO,  # Change to INFO or WARNING in production
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 load_dotenv()
 
