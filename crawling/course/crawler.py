@@ -3,7 +3,7 @@ from pathlib import Path
 from ..navigator import open_course_by_id
 from ..data_storage import init_course_dir, save_json
 # Import all content-type crawler modules
-from . import quiz, forum, group_building, links, pdf, videos, questionnaire
+from . import quiz, forum, group_building, links, pdf, videos, questionnaire, coursepage
 from ..utils import get_logger
 
 logger = get_logger(__name__)
@@ -20,7 +20,7 @@ def crawl_course(driver, course_id: str):
     # Step 2: Initialize the course folder structure
     course_path = init_course_dir(course_id)
 
-    enabled_modules = ["forums", "pdf"]  # Adjust as needed
+    enabled_modules = ["coursepage"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
 
     # Step 3: Set up a mapping of each content type to its crawler module or a lambda adapter.
     # Here, the pdf crawler expects an extra argument, so we wrap it in a lambda.
@@ -46,6 +46,9 @@ def crawl_course(driver, course_id: str):
 
     if "videos" in enabled_modules:
         crawler_map["videos"] = lambda driver: videos.crawl(driver, course_path / "videos")
+
+    if "coursepage" in enabled_modules:
+        crawler_map["coursepage"] = lambda driver: coursepage.crawl(driver, course_path / "coursepage")
 
 
 
@@ -100,12 +103,16 @@ if __name__ == '__main__':
         password = os.getenv('TUB_PASSWORD')
         login(driver, username, password)
 
-        # Specify a test course ID that you know exists (modify accordingly)
-        test_course_id = '41554'  # Replace with an actual course ID from your crawl_this_course_id.json
+        # Specify multiple test course IDs (replace with your actual course IDs)
+        test_course_ids = ['30422', '39648', '42969', '41554', '43178', '42351', '40990']  # Add more as needed
 
-        # Now run the crawler
+        # Import your course crawler
         from ..course.crawler import crawl_course
-        crawl_course(driver, test_course_id)
+
+        # Iterate through all provided course IDs
+        for course_id in test_course_ids:
+            crawl_course(driver, course_id)
+
 
     except Exception as e:
         logger.error(f"An error occurred during the test run: {e}")
