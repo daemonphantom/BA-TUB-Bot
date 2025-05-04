@@ -1,28 +1,17 @@
-import os, re, json, requests
+import os, re, json
+import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs, unquote
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from ..utils import get_logger
+from .utils import *
 
 logger = get_logger(__name__)
 
 BASE_URL = "https://isis.tu-berlin.de"
 
-def slugify(name: str) -> str:
-    replacements = {
-        "ä": "ae",
-        "ö": "oe",
-        "ü": "ue",
-        "ß": "ss"
-    }
-    for orig, repl in replacements.items():
-        name = name.replace(orig, repl).replace(orig.upper(), repl.capitalize())
-    name = name.lower()
-    name = name.replace(" ", "_")
-    name = re.sub(r"[^a-z0-9_]", "", name)  # Keep only alphanum + underscore
-    return name
 
 
 def get_forums_on_course_page(driver, course_id):

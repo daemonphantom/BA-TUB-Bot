@@ -1,0 +1,10 @@
+{
+    "python.analysis.extraPaths": [
+      "./crawling"
+    ],
+    "python.defaultInterpreterPath": "./crawling/crawlenv/bin/python",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingModuleSource": "information"
+    }
+  }
+  

@@ -7,7 +7,7 @@ BASE_PATH = Path("data")
 def init_course_dir(course_id):
     """Create course directory with subfolders if they don't exist."""
     course_path = BASE_PATH / f"course_{course_id}"
-    subdirs = ["forums", "videos", "pdf", "coursepage"]
+    subdirs = ["forums", "videos", "pdf", "mainpage", "subpages", "links", "image", "resources"]
     
     for sub in subdirs:
         (course_path / sub).mkdir(parents=True, exist_ok=True)
