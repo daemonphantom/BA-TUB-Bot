@@ -1,75 +1,9 @@
 [
     {
-        "id": "42290",
+        "id": "30422",
         "name": "Informationssysteme und Datenanalyse",
         "semester": "SS2025",
         "faculty": "DIMA"
-    },
-    {
-        "id": "42351",
-        "name": "Datenbankpraktikum [DBPRA]",
-        "semester": "SS2025",
-        "faculty": "DIMA"
-    },
-    {
-        "id": "42630",
-        "name": "Programmierpraktikum Datensysteme: Data Systems Coding Club (FG DIMA)",
-        "semester": "SS2025",
-        "faculty": "DIMA"
-    },
-    {
-        "id": "42672",
-        "name": "Bachelor's Thesis Colloquium in Data Management Systems",
-        "semester": "SS2025",
-        "faculty": "DIMA"
-    },
-    {
-        "id": "30422",
-        "name": "Einführung in die Programmierung",
-        "semester": "WS2022/2023",
-        "faculty": "ODS"
-    },
-    {
-        "id": "",
-        "name": "",
-        "semester": "",
-        "faculty": ""
-    },
-    {
-        "id": "",
-        "name": "",
-        "semester": "",
-        "faculty": ""
-    },
-    {
-        "id": "",
-        "name": "",
-        "semester": "",
-        "faculty": ""
-    },
-    {
-        "id": "",
-        "name": "",
-        "semester": "",
-        "faculty": ""
-    },
-    {
-        "id": "",
-        "name": "",
-        "semester": "",
-        "faculty": ""
-    },
-    {
-        "id": "",
-        "name": "",
-        "semester": "",
-        "faculty": ""
-    },
-    {
-        "id": "",
-        "name": "",
-        "semester": "",
-        "faculty": ""
     }
 
 ]
