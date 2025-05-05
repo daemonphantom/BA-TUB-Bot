@@ -3,7 +3,7 @@ from pathlib import Path
 from ..navigator import open_course_by_id
 from ..data_storage import init_course_dir, save_json
 # Import all content-type crawler modules
-from . import image, quiz, forum, links, pdf, videos, questionnaire, mainpage, subpages, resources
+from . import image, quiz, forum, links, pdf, videos, questionnaire, mainpage, subpages, resources, document
 from ..utils import get_logger
 
 logger = get_logger(__name__)
@@ -15,7 +15,7 @@ def crawl_course(driver, course_id: str):
     Each module must implement a crawl() function.
     For the PDF module, we pass the destination folder as an extra argument.
     """
-    enabled_modules = ["resources"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
+    enabled_modules = ["document"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
 
 
     logger.info(f"📘 Crawling course: {course_id}")
@@ -60,6 +60,7 @@ def crawl_course(driver, course_id: str):
         "subpages":     (subpages.crawl,     course_path / "subpages" / "subpages.json"),
         "image":       (image.crawl,        course_path / "image" / "image_metadata.json"),
         "resources": (resources.crawl, course_path / "resources" / "resources.json"),
+        "document": (document.crawl, course_path / "document" / "documents.json")
     }
 
 
