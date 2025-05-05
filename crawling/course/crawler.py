@@ -3,7 +3,7 @@ from pathlib import Path
 from ..navigator import open_course_by_id
 from ..data_storage import init_course_dir, save_json
 # Import all content-type crawler modules
-from . import image, quiz, forum, links, pdf, videos, questionnaire, mainpage, subpages, resources, document
+from . import image, quiz, forum, links, videos, questionnaire, mainpage, subpages, resources, document
 from ..utils import get_logger
 
 logger = get_logger(__name__)
@@ -54,7 +54,6 @@ def crawl_course(driver, course_id: str):
         #"questionnaire":(questionnaire.crawl,course_path / "questionnaire"),
         #"groups":       (group_building.crawl,course_path / "groups"),
         "links":        (links.crawl,        course_path / "links" / "links.json"),
-        "pdf":          (pdf.crawl,          course_path / "pdf"),
         "videos":       (videos.crawl,       course_path / "videos"),
         "mainpage":     (mainpage.crawl,     course_path / "mainpage" / "mainpage.json"),
         "subpages":     (subpages.crawl,     course_path / "subpages" / "subpages.json"),

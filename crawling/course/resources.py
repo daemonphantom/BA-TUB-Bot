@@ -1,24 +1,23 @@
-"""resources_crawler_improved.py
+"""resources_crawler.py
 
-* **Direct HTTP resolution** – we request the `view.php` page with the same
-  session cookies; Moodle instantly sends an HTTP redirect (302 / 303) to the
-  `pluginfile.php` asset.  We follow that redirect and stream the response to
-  disk – *exactly* what the browser would have downloaded.
+Downloads all **source‑code single files** (icon = `/f/sourcecode`) and **archive
+files** (icon = `/f/archive`) from a Moodle course.
 
-* **Cleaner grid detection** – avoid the `:has()` selector.  We
-  first collect all `.activity-grid` elements and keep only those that contain
-  an `<img>` with `/f/archive` in its `src`.
+* Handles classic *resource* grids **and** nested *folder‑tree* views.
+* Stores files in two sub‑folders **per course**:
+    * `files_single/` – individual source files (`.py`, `.c`, …)
+    * `files_zip/`   – archive downloads (`.zip`, `.tar.gz`, …) or any file
+      behind an archive icon.
+* Adds the parent *folder label* (if any) to each JSON metadata entry.
 
+`document_crawler.py` skips archive extensions, so there is no overlap.
 """
-
 from __future__ import annotations
 
 import json
-import mimetypes
-import os
 from pathlib import Path
-from typing import List
-from urllib.parse import unquote, urljoin, urlparse
+from typing import List, Optional
+from urllib.parse import unquote, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -29,159 +28,146 @@ from ..utils import get_course_id_from_url, get_logger
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+ARCHIVE_EXTS = {
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".tar.gz", ".tar.bz2"
+}
+ICON_SELECTORS = (
+    "img[src*='/f/archive'], img[src*='/f/sourcecode']"
+)
+SUB_SINGLE = "files_single"
+SUB_ZIP    = "files_zip"
 
 # ---------------------------------------------------------------------------
-# Helper utilities
+# Helpers
 # ---------------------------------------------------------------------------
 
-# Return the base filename of *url*.
-# The Moodle `pluginfile.php` path often includes the original filename – we simply extract that part.
-def _safe_filename_from_url(url: str) -> str:
+def _safe_name(url: str) -> Optional[str]:
+    """Return the basename of *url*; skip pseudo link files."""
     name = Path(unquote(urlparse(url).path)).name
-    if "." not in name:
-        name += ".bin"
-    return name
+    if any(name.endswith(ext) for ext in (".webloc", ".url", ".desktop", ".lnk", ".link")):
+        return None
+    return name or None
 
-def _stream_download(session: requests.Session, url: str, filepath: Path) -> bool:
-    """Download *url* via *session* streaming straight to *filepath*."""
+
+def _download(sess: requests.Session, url: str, dst: Path) -> bool:
     try:
-        resp = session.get(url, stream=True, timeout=20, allow_redirects=True)
-        resp.raise_for_status()
-
-        # Create parent directories once all good
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, "wb") as fp:
-            for chunk in resp.iter_content(chunk_size=32_768):
-                fp.write(chunk)
+        with sess.get(url, stream=True, timeout=25, allow_redirects=True) as resp:
+            resp.raise_for_status()
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            with open(dst, "wb") as fh:
+                for chunk in resp.iter_content(32_768):
+                    fh.write(chunk)
         return True
-    except (requests.Timeout, requests.RequestException) as exc:
-        logger.warning("⚠️ Download failed for %s – %s", url, exc)
+    except requests.RequestException as exc:
+        logger.warning("⚠️  Download failed for %s – %s", url, exc)
         return False
 
 
+def _nearest_folder(anchor) -> str:
+    span = anchor.find_previous(
+        lambda t: t.name == "span" and "fp-filename" in t.get("class", []) and not t.find("a")
+    )
+    return span.get_text(strip=True) if span else ""
+
 # ---------------------------------------------------------------------------
-# Public crawler entry point
+# Main crawler
 # ---------------------------------------------------------------------------
 
 def crawl(driver, metadata_path: str) -> List[dict]:
-    """Crawl the current course page for archive (`/f/archive`) resource grids.
+    cid = get_course_id_from_url(driver.current_url)
 
-    Parameters
-    ----------
-    driver : selenium.webdriver
-        Authenticated driver, already inside a Moodle course.
-    metadata_path : str
-        JSON file where metadata should be written.
+    grids = [g for g in driver.find_elements(By.CSS_SELECTOR, ".activity-grid")
+             if g.find_elements(By.CSS_SELECTOR, ICON_SELECTORS)]
+    logger.info("✅ Found %d archive/source grids", len(grids))
 
-    Returns
-    -------
-    List[dict]
-        One dict per successfully downloaded archive.
-    """
-
-    course_id = get_course_id_from_url(driver.current_url)
-    logger.info("📦 Crawling archive resources for course %s", course_id)
-
-    # ---------------------------------------------------------------------
-    # 1) Locate activity grids whose *icon* contains '/f/archive'.
-    # ---------------------------------------------------------------------
-    candidate_grids = driver.find_elements(By.CSS_SELECTOR, ".activity-grid")
-    archive_grids = [
-        g for g in candidate_grids
-        if g.find_elements(By.CSS_SELECTOR,
-                        "img[src*='/f/archive'], img[src*='/f/sourcecode']")
-    ]
-
-    # ---------------------------------------------------------------------
-    # 2) Prepare HTTP session with Selenium cookies & UA
-    # ---------------------------------------------------------------------
-    session = requests.Session()
+    sess = requests.Session()
     for c in driver.get_cookies():
-        session.cookies.set(c["name"], c["value"])
-    session.headers.update({"User-Agent": driver.execute_script("return navigator.userAgent;")})
+        sess.cookies.set(c["name"], c["value"])
+    sess.headers.update({"User-Agent": driver.execute_script("return navigator.userAgent;")})
 
-    # ---------------------------------------------------------------------
-    # 3) Iterate & download
-    # ---------------------------------------------------------------------
-    downloads: List[dict] = []
-    processed_urls = set()
+    out: List[dict] = []
+    seen: set[str] = set()
 
-    for idx, grid in enumerate(archive_grids, start=1):
+    for idx, grid in enumerate(grids, 1):
         try:
-            # Get the <a> surrounding the icon (first ancestor anchor)
-            a_tag = grid.find_element(By.XPATH, ".//a[contains(@href,'/mod/resource/view.php')]")
-            moodle_url = a_tag.get_attribute("href")
-            if not moodle_url or moodle_url in processed_urls:
-                continue
-            processed_urls.add(moodle_url)
+            is_archive = bool(grid.find_elements(By.CSS_SELECTOR, "img[src*='/f/archive']"))
+            subfolder  = SUB_ZIP if is_archive else SUB_SINGLE
 
-            # Derive a clean title (Moodle appends “\nDatei” inside .instancename)
+            # ------------------------------------------------ link to view.php / folder
             try:
-                title_span = a_tag.find_element(By.CSS_SELECTOR, ".instancename")
-                # cut off everything after the last “\nDatei”
-                title = title_span.text.rsplit("\nDatei", 1)[0].strip()
-            except Exception:
-                # fallback: use anchor text and strip the suffix if present
-                title = a_tag.text.replace("\nDatei", "").strip()
-
-            # 3a. Resolve the redirect → actual file
-            logger.debug("Resolving %s", moodle_url)
-            res = session.get(moodle_url, stream=True, timeout=20, allow_redirects=True)
-            res.raise_for_status()
-
-            # Final URL (after redirects) is res.url
-            download_url = res.url
-            if "pluginfile.php" not in download_url:
-                logger.warning("Skipping non‑pluginfile resource %s", download_url)
-                continue
-
-            # 3b. Determine filename & save
-            orig_filename = _safe_filename_from_url(download_url)
-            # pick target directory: ZIPs -> files_zip, single code files -> files_single
-            if grid.find_elements(By.CSS_SELECTOR, "img[src*='/f/archive']"):
-                subfolder = "files_zip"        # bulk archives
-            else:                              # '/f/sourcecode', '/f/markup', ...
-                subfolder = "files_single"     # single‑file downloads
-            save_dir = Path(metadata_path).with_name(subfolder)
-            save_path = save_dir / f"{course_id}_{idx:03d}_{orig_filename}"
-
-            # If we've already streamed the bytes (res.iter_content not yet
-            # consumed) we can pass the open response to the helper.
-            ok = False
-            try:
-                # Write already‑open response without extra request
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(save_path, "wb") as fp:
-                    for chunk in res.iter_content(chunk_size=32_768):
-                        fp.write(chunk)
-                ok = True
-            except Exception as exc:
-                logger.debug("Inline stream failed, retrying fresh – %s", exc)
-
-            if not ok:  # fallback – fetch again (handles edge‑cases)
-                ok = _stream_download(session, download_url, save_path)
-
-            if ok:
-                logger.info("✅ Downloaded %s", save_path)
-                downloads.append(
-                    {
-                        "title": title,
-                        "moodle_url": moodle_url,
-                        "download_url": download_url,
-                        "saved_filename": save_path.name,
-                        "saved_path": str(save_path),
-                    }
+                a = grid.find_element(By.XPATH,
+                    ".//a[contains(@href,'/mod/resource/view.php') or contains(@href,'/mod/folder/view.php')]"
                 )
-        except (NoSuchElementException, requests.RequestException) as exc:
-            logger.warning("⚠️ Could not process archive grid – %s", exc)
+                view_url = a.get_attribute("href")
+            except NoSuchElementException:
+                view_url = None
+
+            # ---------- case 1: dedicated view page ----------
+            if view_url and view_url not in seen:
+                seen.add(view_url)
+                res = sess.get(view_url, stream=True, timeout=20, allow_redirects=True)
+                res.raise_for_status()
+
+                # direct binary (HTTP 302 to pluginfile)
+                if "pluginfile.php" in res.url and not res.headers.get("Content-Type", "").startswith("text/html"):
+                    fname = _safe_name(res.url)
+                    if not fname:
+                        continue
+                    ext = Path(fname).suffix.lower()
+                    if (is_archive and ext not in ARCHIVE_EXTS) or (not is_archive and ext in ARCHIVE_EXTS):
+                        # skip mismatched types
+                        continue
+                    dst = Path(metadata_path).with_name(subfolder) / f"{cid}_{idx:03d}_{fname}"
+                    if _download(sess, res.url, dst):
+                        logger.info("✅ Saved %s", dst)
+                        out.append({
+                            "title": fname,
+                            "folder": "",
+                            "moodle_url": view_url,
+                            "download_url": res.url,
+                            "saved_filename": dst.name,
+                            "saved_path": str(dst),
+                        })
+                    continue  # done with this grid
+
+                html = res.text  # folder view or stub page
+            else:
+                html = grid.get_attribute("innerHTML")  # grid itself contains links
+                view_url = driver.current_url
+
+            # ---------- case 2: scrape all links inside HTML ----------
+            soup = BeautifulSoup(html, "html.parser")
+            anchors = soup.select("a[href*='pluginfile.php']")
+            for subidx, link in enumerate(anchors, 1):
+                dl_url = link["href"]
+                fname = _safe_name(dl_url)
+                if not fname:
+                    continue
+                ext = Path(fname).suffix.lower()
+                if (is_archive and ext not in ARCHIVE_EXTS) or (not is_archive and ext in ARCHIVE_EXTS):
+                    continue
+                dst = Path(metadata_path).with_name(subfolder) / f"{cid}_{idx:03d}_{subidx:02d}_{fname}"
+                if _download(sess, dl_url, dst):
+                    logger.info("✅ Saved %s", dst)
+                    out.append({
+                        "title": link.get_text(strip=True) or fname,
+                        "folder": _nearest_folder(link),
+                        "moodle_url": view_url,
+                        "download_url": dl_url,
+                        "saved_filename": dst.name,
+                        "saved_path": str(dst),
+                    })
+
+        except requests.RequestException as exc:
+            logger.warning("⚠️  HTTP error – %s", exc)
             continue
 
-    # ---------------------------------------------------------------------
-    # 4) Write metadata JSON
-    # ---------------------------------------------------------------------
+    # write metadata
     Path(metadata_path).parent.mkdir(parents=True, exist_ok=True)
     with open(metadata_path, "w", encoding="utf-8") as fp:
-        json.dump(downloads, fp, ensure_ascii=False, indent=2)
+        json.dump(out, fp, ensure_ascii=False, indent=2)
 
-    logger.info("📝 Saved metadata for %d archive files to %s", len(downloads), metadata_path)
-    return downloads
+    return out
