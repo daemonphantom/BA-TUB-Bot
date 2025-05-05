@@ -1,24 +1,14 @@
 """resources_crawler_improved.py
 
-Download *archive* files (mostly ZIPs) behind Moodle "resource" activities that
-show the classic **archive** icon (`/f/archive`).  The original implementation
-relied on Selenium‑Wire to intercept the fleeting network request that the
-browser issues when `view.php?id=…` immediately redirects to a `pluginfile.php`
-URL.  This rewrite removes that brittle dependency altogether:
-
 * **Direct HTTP resolution** – we request the `view.php` page with the same
   session cookies; Moodle instantly sends an HTTP redirect (302 / 303) to the
   `pluginfile.php` asset.  We follow that redirect and stream the response to
   disk – *exactly* what the browser would have downloaded.
-* **Session reuse** – one `requests.Session` carries the User‑Agent and cookies
-  from Selenium, saving round‑trip time and keeping the code succinct.
-* **Cleaner grid detection** – avoid the experimental `:has()` selector.  We
+
+* **Cleaner grid detection** – avoid the `:has()` selector.  We
   first collect all `.activity-grid` elements and keep only those that contain
   an `<img>` with `/f/archive` in its `src`.
-* **Deterministic filenames** – `{courseID}_{NNN}_{orig_filename}` (with a
-  zero‑padded index) guarantees stable ordering.
-* **Edge‑case aware** – handles missing titles, absent redirects, non‑200
-  status codes, and duplicate resources gracefully.
+
 """
 
 from __future__ import annotations
@@ -44,18 +34,13 @@ logger = get_logger(__name__)
 # Helper utilities
 # ---------------------------------------------------------------------------
 
+# Return the base filename of *url*.
+# The Moodle `pluginfile.php` path often includes the original filename – we simply extract that part.
 def _safe_filename_from_url(url: str) -> str:
-    """Return the base filename of *url*.
-
-    The Moodle `pluginfile.php` path often includes the original filename – we
-    simply extract that part.  If no extension can be detected we fall back to
-    `.zip`.
-    """
     name = Path(unquote(urlparse(url).path)).name
-    if name.count(".") == 0:  # no extension → default to .zip
-        name += ".zip"
+    if "." not in name:
+        name += ".bin"
     return name
-
 
 def _stream_download(session: requests.Session, url: str, filepath: Path) -> bool:
     """Download *url* via *session* streaming straight to *filepath*."""
@@ -101,8 +86,11 @@ def crawl(driver, metadata_path: str) -> List[dict]:
     # 1) Locate activity grids whose *icon* contains '/f/archive'.
     # ---------------------------------------------------------------------
     candidate_grids = driver.find_elements(By.CSS_SELECTOR, ".activity-grid")
-    archive_grids = [g for g in candidate_grids if g.find_elements(By.CSS_SELECTOR, "img[src*='/f/archive']")]
-    logger.info("Found %d archive grids.", len(archive_grids))
+    archive_grids = [
+        g for g in candidate_grids
+        if g.find_elements(By.CSS_SELECTOR,
+                        "img[src*='/f/archive'], img[src*='/f/sourcecode']")
+    ]
 
     # ---------------------------------------------------------------------
     # 2) Prepare HTTP session with Selenium cookies & UA
@@ -149,7 +137,12 @@ def crawl(driver, metadata_path: str) -> List[dict]:
 
             # 3b. Determine filename & save
             orig_filename = _safe_filename_from_url(download_url)
-            save_dir = Path(metadata_path).with_name("files")
+            # pick target directory: ZIPs -> files_zip, single code files -> files_single
+            if grid.find_elements(By.CSS_SELECTOR, "img[src*='/f/archive']"):
+                subfolder = "files_zip"        # bulk archives
+            else:                              # '/f/sourcecode', '/f/markup', ...
+                subfolder = "files_single"     # single‑file downloads
+            save_dir = Path(metadata_path).with_name(subfolder)
             save_path = save_dir / f"{course_id}_{idx:03d}_{orig_filename}"
 
             # If we've already streamed the bytes (res.iter_content not yet
