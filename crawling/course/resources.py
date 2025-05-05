@@ -127,7 +127,14 @@ def crawl(driver, metadata_path: str) -> List[dict]:
                 continue
             processed_urls.add(moodle_url)
 
-            title = (a_tag.text or a_tag.get_attribute("title") or f"Archive {idx}").strip()
+            # Derive a clean title (Moodle appends “\nDatei” inside .instancename)
+            try:
+                title_span = a_tag.find_element(By.CSS_SELECTOR, ".instancename")
+                # cut off everything after the last “\nDatei”
+                title = title_span.text.rsplit("\nDatei", 1)[0].strip()
+            except Exception:
+                # fallback: use anchor text and strip the suffix if present
+                title = a_tag.text.replace("\nDatei", "").strip()
 
             # 3a. Resolve the redirect → actual file
             logger.debug("Resolving %s", moodle_url)
