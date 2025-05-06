@@ -26,28 +26,6 @@ def crawl_course(driver, course_id: str):
 
     # Step 3: Set up a mapping of each content type to its crawler module or a lambda adapter.
     # Here, the pdf crawler expects an extra argument, so we wrap it in a lambda.
-    """     crawler_map = {}
-
-    if "forums" in enabled_modules:
-        crawler_map["forums"] = lambda driver: forum.crawl(driver, course_path / "forums")
-    if "quizzes" in enabled_modules:
-        crawler_map["quizzes"] = quiz
-    if "questionnaire" in enabled_modules:
-        crawler_map["questionnaire"] = questionnaire
-    if "groups" in enabled_modules:
-        crawler_map["groups"] = group_building
-    if "links" in enabled_modules:
-        crawler_map["links"] = lambda driver: links.crawl(driver, course_path / "links")
-    if "pdf" in enabled_modules:
-        crawler_map["pdf"] = lambda driver: pdf.crawl(driver, course_path / "pdf")
-    if "videos" in enabled_modules:
-        crawler_map["videos"] = lambda driver: videos.crawl(driver, course_path / "videos")
-    if "mainpage" in enabled_modules:
-        crawler_map["mainpage"] = lambda driver: mainpage.crawl(driver, course_path / "mainpage" / "mainpage.json")
-    if "subpages" in enabled_modules:
-        crawler_map["subpages"] = lambda driver: subpages.crawl(driver, course_path / "subpages" / "subpages.json")
-    """
-
     crawler_map = {
         "forums":       (forum.crawl,        course_path / "forums"),
         #"quizzes":      (quiz.crawl,         course_path / "quizzes"),
