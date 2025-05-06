@@ -3,7 +3,7 @@ from pathlib import Path
 from ..navigator import open_course_by_id
 from ..data_storage import init_course_dir, save_json
 # Import all content-type crawler modules
-from . import image, quiz, forum, links, videos, questionnaire, mainpage, subpages, resources, document
+from . import glossaries, image, quiz, forum, links, videos, questionnaire, mainpage, subpages, resources, document
 from ..utils import get_logger
 
 logger = get_logger(__name__)
@@ -15,7 +15,7 @@ def crawl_course(driver, course_id: str):
     Each module must implement a crawl() function.
     For the PDF module, we pass the destination folder as an extra argument.
     """
-    enabled_modules = ["forums"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
+    enabled_modules = ["glossaries"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
 
 
     logger.info(f"📘 Crawling course: {course_id}")
@@ -31,13 +31,14 @@ def crawl_course(driver, course_id: str):
         #"quizzes":      (quiz.crawl,         course_path / "quizzes"),
         #"questionnaire":(questionnaire.crawl,course_path / "questionnaire"),
         #"groups":       (group_building.crawl,course_path / "groups"),
+        "glossaries":   (glossaries.crawl, course_path / "glossaries"),
         "links":        (links.crawl,        course_path / "links" / "links.json"),
         "videos":       (videos.crawl,       course_path / "videos"),
         "mainpage":     (mainpage.crawl,     course_path / "mainpage" / "mainpage.json"),
         "subpages":     (subpages.crawl,     course_path / "subpages" / "subpages.json"),
-        "image":       (image.crawl,        course_path / "image" / "image_metadata.json"),
-        "resources": (resources.crawl, course_path / "resources" / "resources.json"),
-        "document": (document.crawl, course_path / "document" / "documents.json")
+        "image":        (image.crawl,        course_path / "image" / "image_metadata.json"),
+        "resources":    (resources.crawl, course_path / "resources" / "resources.json"),
+        "document":     (document.crawl, course_path / "document" / "documents.json")
     }
 
 
@@ -53,12 +54,15 @@ def crawl_course(driver, course_id: str):
             open_course_by_id(driver, course_id)
             data = crawl_fn(driver, output_path)
 
-            if data:
-                save_path = output_path if output_path.suffix == ".json" else output_path / f"{section}.json"
-                save_json(data, save_path)
-                logger.info(f"✅ Saved {section} data to {save_path}")
+            if output_path.suffix == ".json":
+                if data:
+                    save_json(data, output_path)
+                    logger.info(f"✅ Saved {section} data to {output_path}")
+                else:
+                    logger.warning(f"⚠️ No data found for {section}.")
             else:
-                logger.warning(f"⚠️ No data found for {section}.")
+                logger.info(f"✅ Finished crawling {section}.")
+
         except Exception as e:
             logger.error(f"❌ Error while crawling {section}: {e}")
 
