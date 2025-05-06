@@ -40,6 +40,16 @@
         "name": "Fundamentals of Project Management",
         "semester": "[SoSe 2025]",
         "faculty": ""
+    },    {
+        "id": "40280",
+        "name": "Einführung in die Programmierung",
+        "semester": "[WiSe 2024/25]",
+        "faculty": "ODS"
+    },    {
+        "id": "42242",
+        "name": "Wirtschaftspolitik (AVWL III)",
+        "semester": "[SoSe 2025]",
+        "faculty": ""
     }
 
 ]
