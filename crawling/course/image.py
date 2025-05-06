@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 from urllib.parse import urlparse
 from ..utils import get_logger, get_course_id_from_url
-from .utils import download_image
+from .utils.utils import download_image
 
 logger = get_logger(__name__)
 
