@@ -25,17 +25,16 @@ from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 
 from ..utils import get_course_id_from_url, get_logger
+from .utils.file_kinds import kind_for, ARCHIVE_EXTS
 
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-ARCHIVE_EXTS = {
-    ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".tar.gz", ".tar.bz2"
-}
+
 ICON_SELECTORS = (
-    "img[src*='/f/archive'], img[src*='/f/sourcecode']"
+    "img[src*='/f/archive'], img[src*='/f/sourcecode'], img[src*='/folder/']"
 )
 SUB_SINGLE = "files_single"
 SUB_ZIP    = "files_zip"
@@ -93,9 +92,6 @@ def crawl(driver, metadata_path: str) -> List[dict]:
 
     for idx, grid in enumerate(grids, 1):
         try:
-            is_archive = bool(grid.find_elements(By.CSS_SELECTOR, "img[src*='/f/archive']"))
-            subfolder  = SUB_ZIP if is_archive else SUB_SINGLE
-
             # ------------------------------------------------ link to view.php / folder
             try:
                 a = grid.find_element(By.XPATH,
@@ -116,10 +112,10 @@ def crawl(driver, metadata_path: str) -> List[dict]:
                     fname = _safe_name(res.url)
                     if not fname:
                         continue
-                    ext = Path(fname).suffix.lower()
-                    if (is_archive and ext not in ARCHIVE_EXTS) or (not is_archive and ext in ARCHIVE_EXTS):
-                        # skip mismatched types
+                    kind = kind_for(fname)
+                    if kind == "doc":
                         continue
+                    subfolder = SUB_ZIP if kind == "archive" else SUB_SINGLE
                     dst = Path(metadata_path).with_name(subfolder) / f"{cid}_{idx:03d}_{fname}"
                     if _download(sess, res.url, dst):
                         logger.info("✅ Saved %s", dst)
@@ -146,9 +142,10 @@ def crawl(driver, metadata_path: str) -> List[dict]:
                 fname = _safe_name(dl_url)
                 if not fname:
                     continue
-                ext = Path(fname).suffix.lower()
-                if (is_archive and ext not in ARCHIVE_EXTS) or (not is_archive and ext in ARCHIVE_EXTS):
+                kind = kind_for(fname)
+                if kind == "doc":
                     continue
+                subfolder = SUB_ZIP if kind == "archive" else SUB_SINGLE
                 dst = Path(metadata_path).with_name(subfolder) / f"{cid}_{idx:03d}_{subidx:02d}_{fname}"
                 if _download(sess, dl_url, dst):
                     logger.info("✅ Saved %s", dst)

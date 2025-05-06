@@ -3,7 +3,7 @@ import requests
 import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse, unquote
-from ..utils import get_logger
+from ...utils import get_logger
 
 logger = get_logger(__name__)
 

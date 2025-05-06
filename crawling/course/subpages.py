@@ -10,7 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from ..utils import get_logger
-from .utils import *
+from .utils.utils import *
 
 logger = get_logger(__name__)
 BASE_URL = "https://isis.tu-berlin.de/"

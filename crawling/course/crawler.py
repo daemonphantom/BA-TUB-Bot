@@ -15,7 +15,7 @@ def crawl_course(driver, course_id: str):
     Each module must implement a crawl() function.
     For the PDF module, we pass the destination folder as an extra argument.
     """
-    enabled_modules = ["document"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
+    enabled_modules = ["forums"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
 
 
     logger.info(f"📘 Crawling course: {course_id}")
@@ -107,7 +107,7 @@ if __name__ == '__main__':
     load_dotenv()
 
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")
+    #chrome_options.add_argument("--headless")
 
     driver = webdriver.Chrome(options=chrome_options)
 

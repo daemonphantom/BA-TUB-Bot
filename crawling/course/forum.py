@@ -6,7 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from ..utils import get_logger
-from .utils import *
+from .utils.utils import *
 
 logger = get_logger(__name__)
 
@@ -44,10 +44,13 @@ def get_forums_on_course_page(driver, course_id):
             link = cells[0].find("a")
             forum_url = urljoin(forum_index_url, link.get("href"))
             forum_id = parse_qs(urlparse(forum_url).query).get("f", [""])[0]
+            thread_count = int(cells[2].text.strip())  # Extract from "Themen" column (cell c2)
+
             forum_list.append({
                 "forum_name": link.text.strip(),
                 "forum_url": forum_url,
-                "forum_id": forum_id
+                "forum_id": forum_id,
+                "thread_count": thread_count
             })
         except Exception as e:
             logger.warning(f"⚠️ Skipping forum row: {e}")
@@ -55,46 +58,47 @@ def get_forums_on_course_page(driver, course_id):
     return forum_list
 
 
-def get_discussion_links(driver, forum_url):
+def get_discussion_links(driver, forum_url, thread_count):
     """
     Step 2: Open a specific forum page and extract all top-level thread links (discuss.php?d=...).
     Filters out timestamp-only links (e.g. 'Do., 17. Okt. 2024') and avoids duplicates.
     """
-    driver.get(forum_url)
-    
-    try:
-        # Wait up to 4 seconds for a discussion link to appear.
-        WebDriverWait(driver, 4).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='discuss.php?d=']"))
-        )
-    except Exception as e:
-        logger.warning("⚠️ No posts found in the discussion.")
-        return []
-    
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-
     threads = {}
-    for link in soup.select("a[href*='discuss.php?d=']"):
-        href = link.get("href")
-        title = link.get("title") or link.text.strip()
+    total_pages = (thread_count - 1) // 100 + 1  # page counter
 
-        parsed_url = urlparse(href)
-        query = parse_qs(parsed_url.query)
-        discussion_id = query.get("d", [None])[0]
-        parent = query.get("parent", [None])[0]
+    for p in range(total_pages):
+        paged_url = f"{forum_url}&p={p}"
+        driver.get(paged_url)
 
-        # Skip reply links (they include &parent=...) or incomplete ones
-        if not discussion_id or parent:
+        try:
+            WebDriverWait(driver, 4).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='discuss.php?d=']"))
+            )
+        except Exception:
+            logger.warning(f"⚠️ No posts found on forum page {p}")
             continue
 
-        # Deduplicate by discussion ID
-        if discussion_id not in threads:
-            full_url = urljoin(BASE_URL, f"/mod/forum/discuss.php?d={discussion_id}")
-            threads[discussion_id] = {
-                "title": title,
-                "url": full_url
-            }
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        for link in soup.select("a[href*='discuss.php?d=']"):
+            href = link.get("href")
+            title = link.get("title") or link.text.strip()
+
+            parsed_url = urlparse(href)
+            query = parse_qs(parsed_url.query)
+            discussion_id = query.get("d", [None])[0]
+            parent = query.get("parent", [None])[0]
+
+            if not discussion_id or parent:
+                continue
+            if discussion_id not in threads:
+                full_url = urljoin(BASE_URL, f"/mod/forum/discuss.php?d={discussion_id}")
+                threads[discussion_id] = {
+                    "title": title,
+                    "url": full_url
+                }
+
     return list(threads.values())
+
 
 
 def parse_discussion(driver, discussion_url, forum_folder):
@@ -254,7 +258,7 @@ def crawl(driver, forum_folder):
     for i, forum in enumerate(forums, start=1):
         logger.info(f"➡️ Crawling forum: {forum['forum_name']}")
 
-        threads = get_discussion_links(driver, forum["forum_url"])
+        threads = get_discussion_links(driver, forum["forum_url"], forum["thread_count"])
         forum_data = []
 
         for thread in threads:
