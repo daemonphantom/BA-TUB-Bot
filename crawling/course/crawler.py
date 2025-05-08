@@ -3,7 +3,7 @@ from pathlib import Path
 from ..navigator import open_course_by_id
 from ..data_storage import init_course_dir, save_json
 # Import all content-type crawler modules
-from . import glossaries, image, quiz, forum, links, videos, questionnaire, mainpage, subpages, resources, document
+from . import glossaries, image, quiz, forum, links, videos, questionnaire, mainpage, subpages, resources, document, feedback
 from ..utils import get_logger
 
 logger = get_logger(__name__)
@@ -15,7 +15,7 @@ def crawl_course(driver, course_id: str):
     Each module must implement a crawl() function.
     For the PDF module, we pass the destination folder as an extra argument.
     """
-    enabled_modules = ["glossaries"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
+    enabled_modules = ["quiz"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
 
 
     logger.info(f"📘 Crawling course: {course_id}")
@@ -27,10 +27,11 @@ def crawl_course(driver, course_id: str):
     # Step 3: Set up a mapping of each content type to its crawler module or a lambda adapter.
     # Here, the pdf crawler expects an extra argument, so we wrap it in a lambda.
     crawler_map = {
-        "forums":       (forum.crawl,        course_path / "forums"),
-        #"quizzes":      (quiz.crawl,         course_path / "quizzes"),
+        "quiz":      (quiz.crawl,         course_path / "quizzes"),
         #"questionnaire":(questionnaire.crawl,course_path / "questionnaire"),
+        "forums":       (forum.crawl,        course_path / "forums"),
         #"groups":       (group_building.crawl,course_path / "groups"),
+        #"feedback":   (feedback.crawl, course_path / "feedback"),
         "glossaries":   (glossaries.crawl, course_path / "glossaries"),
         "links":        (links.crawl,        course_path / "links" / "links.json"),
         "videos":       (videos.crawl,       course_path / "videos"),
