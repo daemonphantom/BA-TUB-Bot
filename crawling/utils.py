@@ -5,6 +5,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+loggerwire = logging.getLogger('seleniumwire')
+loggerwire.setLevel(logging.ERROR)
 
 def get_logger(module_name: str):
     return logging.getLogger(module_name)
