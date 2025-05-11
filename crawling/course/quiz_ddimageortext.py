@@ -18,7 +18,7 @@ USER_AGENT_HEADER = {
 }
 
 def download_image_moodle(url: str, data_dir: str, course_id: str, identifier: str, driver=None):
-    logger.info(f"📥 Versuche Bild herunterzuladen: {url}")
+    #logger.info(f"📥 Versuche Bild herunterzuladen: {url}")
 
     parsed = urlparse(url)
     ext = os.path.splitext(unquote(parsed.path))[1].lower()
@@ -34,13 +34,12 @@ def download_image_moodle(url: str, data_dir: str, course_id: str, identifier: s
 
     try:
         if driver and hasattr(driver, "requests"):
-            logger.info("🔍 Verwende Selenium Wire zur Bildextraktion")
             matching_requests = [r for r in driver.requests if url in r.url and r.response]
             if matching_requests:
                 response = max(matching_requests, key=lambda r: len(r.response.body))
                 with open(path, "wb") as f:
                     f.write(response.response.body)
-                logger.info(f"✅ Erfolgreich aus Netzwerk gespeichert: {path}")
+                logger.info(f"✅ Erfolgreich gespeichert: {path}")
                 return path
             else:
                 logger.warning("⚠️ Kein passender Request im Netzwerk-Log gefunden")
@@ -65,7 +64,7 @@ def parse_ddimageortext(qdiv, base_url, data_dir, course_id, driver=None):
                 if bg_path and os.path.exists(bg_path) and bg_path.lower().endswith((".png", ".jpg", ".jpeg")):
                     with Image.open(bg_path) as img:
                         ddinfo["bg_size"] = img.size
-                        logger.info(f"📐 Bildgröße: {img.size}")
+                        #logger.info(f"📐 Bildgröße: {img.size}")
                 elif bg_path and os.path.exists(bg_path) and bg_path.lower().endswith(".svg"):
                     ddinfo["bg_size"] = get_svg_size(bg_path)
                 elif not bg_path:
@@ -79,7 +78,7 @@ def parse_ddimageortext(qdiv, base_url, data_dir, course_id, driver=None):
         dz_container = qdiv.select_one("div.dropzones")
         if dz_container and dz_container.has_attr("data-place-info"):
             try:
-                logger.info("📌 Dropzone-Informationen extrahieren")
+                #logger.info("📌 Dropzone-Informationen extrahieren")
                 place_info = json.loads(html.unescape(dz_container["data-place-info"]))
                 for no, meta in place_info.items():
                     zones.append({
@@ -96,7 +95,6 @@ def parse_ddimageortext(qdiv, base_url, data_dir, course_id, driver=None):
         for item in qdiv.select("div.draghomes .draghome"):
             group = next((c for c in item.get("class", []) if c.startswith("group")), "")
             choice = next((c for c in item.get("class", []) if c.startswith("choice")), "")
-            logger.info(f"🧩 Draghome erkannt: group={group}, choice={choice}")
 
             content = ""
             loc = None
@@ -106,7 +104,7 @@ def parse_ddimageortext(qdiv, base_url, data_dir, course_id, driver=None):
                 if key in seen:
                     continue
                 seen.add(key)
-                logger.info(f"🔹 Finde Draggable-Bild: {src}")
+                #logger.info(f"🔹 Finde Draggable-Bild: {src}")
                 loc = download_image_moodle(src, data_dir, course_id, f"{group}_{choice}", driver=driver) or src
             else:
                 content = item.get_text(" ", strip=True)
@@ -114,7 +112,7 @@ def parse_ddimageortext(qdiv, base_url, data_dir, course_id, driver=None):
                 if key in seen:
                     continue
                 seen.add(key)
-                logger.info(f"🔸 Finde Draggable-Text: {content}")
+                #logger.info(f"🔸 Finde Draggable-Text: {content}")
 
             choices.append({
                 "group": group,
