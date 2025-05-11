@@ -6,6 +6,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from ..utils import get_logger
 from .utils.utils import slugify
+from .quiz_ddimageortext import parse_ddimageortext, download_image_moodle
+from .quiz_imageques import parse_checkbox_multichoice, parse_radiobutton_multichoice, parse_truefalse_question, extract_question_image, parse_truefalse_multi, extract_text_and_underlined
+
 
 logger   = get_logger(__name__)
 BASE_URL = "https://isis.tu-berlin.de"
@@ -73,70 +76,56 @@ def _dl(url:str, folder:str):
     return loc
 # -------------------------------------------------------------------
 
-def parse_question_blocks(html, base_url=BASE_URL, img_dir="ddimg"):
+def parse_question_blocks(html, driver=None, base_url=BASE_URL, data_dir="data", course_id="unknown"):
     soup = BeautifulSoup(html, "html.parser")
     questions = []
 
     for qdiv in soup.select("div.que"):
         try:
             number = int(qdiv.select_one("h3 span.qno").text.strip())
-            # Standardmäßiger Fragetext
-            qtext_el = qdiv.select_one("div.qtext")
-            qtext = qtext_el.get_text(" ", strip=True) if qtext_el else ""
 
-            # Punkte extrahieren
+            qtext_el = qdiv.select_one("div.qtext")
+            qtext, q_under = extract_text_and_underlined(qtext_el)
+            
+            image = extract_question_image(qdiv, base_url, data_dir, course_id, driver=driver)
+
             points = ""
-            grade = qdiv.select_one("div.grade")
+            grade = qdiv.select_one("div.grade")             # Punkte
             if grade and "Erreichbare Punkte" in grade.text:
                 points = grade.text.split(":", 1)[1].strip()
-            elif "Nicht bewertet" in grade.text:
+            elif grade and "Nicht bewertet" in grade.text:
                 points = "0"
-            # ------------------------------------------------------------------
-            # NEW  ➜  Drag & Drop on image or text  (ddimageortext)
-            # ------------------------------------------------------------------
+
+            # Drag & Drop on image or text  (ddimageortext)
             if "ddimageortext" in qdiv.get("class", []):
-                qtype = "ddimageortext"
-                ddinfo = {}
-
-                # background
-                bg = qdiv.select_one("div.ddarea img.dropbackground")
-                if bg:
-                    bg_url  = urljoin(base_url, bg["src"])
-                    bg_path = _dl(bg_url, img_dir)
-                    ddinfo["background"] = bg_path
-
-                # drop zones (coords & group id)
-                zones = []
-                for dz in qdiv.select("div.dropzone"):
-                    zones.append({
-                        "group" : dz["class"][1],                 # e.g. group1
-                        "place" : dz["class"][2],                 # e.g. place3
-                        "style" : dz.get("style","")              # contains xy + size
-                    })
-                ddinfo["dropzones"] = zones
-
-                # draggable choices grouped by groupX
-                choices = []
-                for drag in qdiv.select("div.draghomes img.group1, \
-                                          div.draghomes img.group2, \
-                                          div.draghomes img.group3, \
-                                          div.draghomes img.group4"):
-                    drag_url  = urljoin(base_url, drag["src"])
-                    drag_path = _dl(drag_url, img_dir)
-                    choices.append({
-                        "group" : next(c for c in drag["class"] if c.startswith("group")),
-                        "choice": next(c for c in drag["class"] if c.startswith("choice")),
-                        "file"  : drag_path,
-                        "alt"   : drag.get("alt","")
-                    })
-                ddinfo["choices"] = choices
-
+                ddinfo = parse_ddimageortext(qdiv,
+                                             base_url=base_url,
+                                             data_dir=data_dir,
+                                             course_id=course_id,
+                                             driver=driver)
                 questions.append({
                     "number": number,
-                    "text"  : qtext,
-                    "type"  : qtype,
+                    "text": qtext,
+                    **({"underlined": q_under} if q_under else {}),
+                    "type": "ddimageortext",
                     "points": points,
-                    "dd"    : ddinfo
+                    "dd": ddinfo
+                })
+                continue
+
+            # MULTICHOICE, Mit Bild
+            elif qdiv.select("input[type='checkbox']"):
+                qinfo = parse_checkbox_multichoice(qdiv, base_url,
+                                                   data_dir, course_id,
+                                                   driver=driver)
+                questions.append({
+                    "number": number,
+                    "text": qinfo["text"],
+                    **({"underlined": q_under} if q_under else {}),
+                    "type": qinfo["type"],
+                    "points": points,
+                    "image": qinfo["image"],
+                    "options": qinfo["options"]     # ← *hier* kommen später ebenfalls underlined‑Infos rein
                 })
                 continue
 
@@ -157,14 +146,30 @@ def parse_question_blocks(html, base_url=BASE_URL, img_dir="ddimg"):
                     ]
                     options.append({"statement": statement, "choices": choices})
 
+            # TRUE/FALSE SINGLE
+            elif "truefalse" in qdiv.get("class", []):
+                qinfo = parse_truefalse_question(qdiv, base_url, data_dir, course_id, driver=driver)
+                questions.append({
+                    "number": number,
+                    "text": qinfo["text"],
+                    "type": qinfo["type"],
+                    "points": points,
+                    "options": qinfo["options"]
+                })
+                continue
+            
             # TRUE/FALSE MULTI (Matrix)
             elif qdiv.select("table.generaltable input[type='radio']"):
-                qtype = "truefalse_multi"
-                options = [
-                    row.select_one("td.optiontext").get_text(" ", strip=True)
-                    for row in qdiv.select("table.generaltable tr.qtype_mtf_row")
-                    if row.select_one("td.optiontext")
-                ]
+                qinfo = parse_truefalse_multi(qdiv)
+                questions.append({
+                    "number": number,
+                    "text": qinfo["text"],
+                    "type": qinfo["type"],
+                    "points": points,
+                    "image": qinfo["image"],
+                    "options": qinfo["options"]
+                })
+                continue
 
             # CLOZE / MULTIANSWER
             elif qdiv.has_attr("class") and "multianswer" in qdiv["class"]:
@@ -193,14 +198,18 @@ def parse_question_blocks(html, base_url=BASE_URL, img_dir="ddimg"):
                             "choices": choice_texts
                         })
 
-            # MULTICHOICE (Einfachauswahl)
+            # RADIO (Einfachauswahl)
             elif qdiv.select("div.answer input[type='radio']"):
-                qtype = "multichoice"
-                options = [
-                    div.select_one("div.flex-fill").get_text(" ", strip=True)
-                    for div in qdiv.select("div.answer > div")
-                    if div.select_one("div.flex-fill")
-                ]
+                qinfo = parse_radiobutton_multichoice(qdiv, base_url, data_dir, course_id, driver=driver)
+                questions.append({
+                    "number": number,
+                    "text": qinfo["text"],
+                    "type": qinfo["type"],
+                    "points": points,
+                    "image": qinfo["image"],
+                    "options": qinfo["options"]
+                })
+                continue
 
             # SHORTANSWER
             elif qdiv.select("input[type='text']"):
@@ -217,6 +226,7 @@ def parse_question_blocks(html, base_url=BASE_URL, img_dir="ddimg"):
                 "text":   qtext,
                 "type":   qtype,
                 "points": points,
+                "image": image,
                 "options": options
             })
 
@@ -242,7 +252,7 @@ def crawl_quiz(driver, quiz, save_dir, course_id, idx):
 
     # Merke aktuelles Fenster
     main_window = driver.current_window_handle
-
+    """  
     try:
         start_btn = WebDriverWait(driver, 3).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, ".quizstartbuttondiv button, .singlebutton.quizstartbuttondiv button"))
@@ -251,21 +261,29 @@ def crawl_quiz(driver, quiz, save_dir, course_id, idx):
     except Exception:
         logger.warning("⚠️  Kein Start-Button für dieses Quiz.")
         return None, 0
-
+    """
     # ❗ Versuche, cmid & sesskey aus dem Form zu extrahieren und direkte Start-URL zu bauen
     try:
         soup = BeautifulSoup(driver.page_source, "html.parser")
         form = soup.find("form", action=re.compile(r"startattempt\.php"))
         cmid = form.find("input", {"name": "cmid"}).get("value")
         sesskey = form.find("input", {"name": "sesskey"}).get("value")
-        attempt_url = f"{BASE_URL}/mod/quiz/startattempt.php?cmid={cmid}&sesskey={sesskey}"
+        attempt_url = f"{BASE_URL}/mod/quiz/startattempt.php?cmid={cmid}&sesskey={sesskey}&page=0"
         logger.info(f"🔗 Umgehen Popup — öffne direkt: {attempt_url}")
         driver.get(attempt_url)
 
         # Jetzt nochmal "Versuch beginnen" im neuen Kontext klicken
-        WebDriverWait(driver, 3).until(
-            EC.element_to_be_clickable((By.ID, "id_submitbutton"))
-        ).click()
+        submit_btns = driver.find_elements(By.ID, "id_submitbutton")
+        if submit_btns:
+            try:
+                WebDriverWait(driver, 3).until(
+                    EC.element_to_be_clickable((By.ID, "id_submitbutton"))
+                ).click()
+            except Exception as e:
+                logger.warning(f"⚠️  Submit-Button konnte nicht geklickt werden: {e}")
+        else:
+            logger.info("✅ Kein zusätzlicher Submit-Button nötig - Quiz beginnt sofort.")
+
     except Exception as e:
         logger.warning(f"⚠️  Konnte Start-Attempt-URL nicht öffnen: {e}")
 
@@ -282,7 +300,7 @@ def crawl_quiz(driver, quiz, save_dir, course_id, idx):
     pagecounter = 0
     while True:
         html = driver.page_source
-        all_questions.extend(parse_question_blocks(html))
+        all_questions.extend(parse_question_blocks(html, driver=driver, base_url=BASE_URL, data_dir="data", course_id=course_id))
         soup = BeautifulSoup(html, "html.parser")
         if is_last_page(soup):
             break
@@ -330,3 +348,4 @@ def crawl(driver, quiz_folder):
             })
     logger.info(f"✅ {len(summary)} Quiz-Dateien in {quiz_folder} gespeichert")
     return summary
+

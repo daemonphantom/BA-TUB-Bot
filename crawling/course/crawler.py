@@ -82,7 +82,7 @@ def crawl_course(driver, course_id: str):
 if __name__ == '__main__':
     import os
     import json
-    from selenium import webdriver
+    from seleniumwire import webdriver
     from selenium.webdriver.chrome.options import Options
     from crawling.login import login
     from dotenv import load_dotenv
