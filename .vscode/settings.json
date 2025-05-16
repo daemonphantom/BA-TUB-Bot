@@ -1,4 +1,4 @@
-{
+/* {
     "python.analysis.extraPaths": [
       "./crawling"
     ],
@@ -7,4 +7,4 @@
         "reportMissingModuleSource": "information"
     }
   }
-  
+   */
