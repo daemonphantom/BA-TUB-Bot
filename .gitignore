@@ -1,0 +1,26 @@
+# Ignore virtual environments
+a_pipeline/pipenv
+a_pipeline/c_transcription/transcribe/transEnv
+**/.env
+**/__pycache__
+
+# Ignore IDE settings (except .vscode if you want to share it)
+.vscode/
+!.vscode/settings.json
+
+# Ignore macOS system files
+.DS_Store
+
+# Ignore data files
+b_data/
+!data/README.md
+# keep a readme on git
+
+# Ignore log files and temp
+*.log
+*.tmp
+*.bak
+
+# Ignore parsed output
+**/files_pdf_parsed/
+**/files_pdf/*.md
