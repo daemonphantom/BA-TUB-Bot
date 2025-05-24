@@ -1,0 +1,16 @@
+course -> 
+    - document 
+        --files_doc
+        --files_docx
+        --files_pdf
+        --files_rtf
+    - forums (announcements from the teachers and questions in forum from students)
+    - glossaries (very rare for this to be in the course, but it includes Q&A, mostly)
+    - image (.jpeg, .png, .jpg files )
+    - links
+    - mainpage (course page which often includes text like information about the course and the exam, or assignment dates )
+    - subpage (similar to mainpage function, it is mostly additional information if teachers decide to use subpages)
+    - quizzes (tests, quizzes, often official exams, i coded to get the quiz questions and sometimes answers (if there are any in results page))
+    - questionnaires
+    - resources (if the course has any  zip files or single .py or .c or .java files - mostly presets for homework)
+    - videos (lectures mostly or tutorials. i have transcription script, which can transform these into json text)

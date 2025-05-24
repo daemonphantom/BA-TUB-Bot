@@ -6,9 +6,8 @@ import html
 from urllib.parse import urljoin, unquote, urlparse
 from bs4 import BeautifulSoup
 from PIL import Image  # type: ignore
-from .utils.utils import download_image, get_logger
+from .utils.utils import get_logger
 from xml.etree import ElementTree as ET
-
 
 logger = get_logger(__name__)
 

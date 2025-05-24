@@ -1,0 +1,11 @@
+python-dotenv==1.1.0
+beautifulsoup4==4.13.3
+selenium==4.20.0
+selenium-wire==5.1.0
+undetected-chromedriver==3.5.5
+Pillow==11.2.1
+PyMuPDF==1.24.3
+pymupdf4llm==0.0.24
+pipdeptree==2.26.1
+whisper-timestamped @ git+https://github.com/linto-ai/whisper-timestamped@<commit_or_tag>
+paddleocr
