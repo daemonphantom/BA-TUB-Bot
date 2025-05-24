@@ -1,13 +1,12 @@
 import os
 from pathlib import Path
-from .crawler_navigator import open_course_by_id
+from .navigator import open_course_by_id
 from .crawler_data_storage import init_course_dir, save_json
 # Import all content-type crawler modules
 from . import crawler_document, crawler_feedback, crawler_forum, crawler_glossaries, crawler_image, crawler_links, crawler_mainpage, crawler_questionnaire, crawler_quiz, crawler_resources, crawler_subpages, crawler_videos
 from .utils.utils import get_logger
 
 logger = get_logger(__name__)
-
 
 def crawl_course(driver, course_id: str):
     """
@@ -92,7 +91,7 @@ if __name__ == '__main__':
         login(driver, username, password)
 
         # Simple relative path without extra packages
-        with open("./course_ID_saved.json", "r", encoding="utf-8") as f:
+        with open("./a_pipeline/a_crawling/course_ids/course_ID_saved.json", "r", encoding="utf-8") as f:
             course_data = json.load(f)
         test_course_ids = [course["id"] for course in course_data]
 

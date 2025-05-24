@@ -1,0 +1,261 @@
+"""
+Transcode *.mp4 videos into sentence-level transcript chunks that follow the
+*unified knowledge-graph format* you described.
+
+Each output JSON lives next to the originating video, inside a new directory
+called **transcribed_videos**.  One JSON file is produced *per video* and
+contains a list of chunks like
+
+    {
+      "source": "video",
+      "course_id": "30422",
+      "chunk_type": "transcript_sentence",
+      "content": "Hallo und herzlich willkommen …",
+      "metadata": {
+        "lecture_title": "Fakultät von 5 rekursiv berechnen",
+        "start": 0.00,
+        "end": 4.32,
+        "video_file": "30422_01_course_video.mp4",
+        "video_url": "https://isis.tu-berlin.de/…",
+        "collection": "Manni - die main() Funktion"
+      }
+    }
+
+Run the script once at the top level of your *b_data* tree:
+
+```bash
+python unified_transcriber.py /ba-tutorai/b_data
+```
+
+You may point `--model-size` at any Whisper size you have on disk ("small" by
+default).  Files that have already been processed are skipped via a
+*transformation_log.json* written to the course root, so you can safely resume
+or re-run.
+"""
+
+import argparse
+import json
+import os
+import re
+import string
+import subprocess
+import sys
+import time
+import pprint
+from pathlib import Path
+from typing import Dict, List
+
+from whisper_timestamped import transcribe_timestamped, load_model  # pip install whisper_timestamped
+
+# ---------------------------------------------------------------------------
+# CONFIGURATION ----------------------------------------------------------------
+# ---------------------------------------------------------------------------
+MODEL_SIZE = "small"  # change at runtime with --model-size
+AUDIO_CODEC = "libmp3lame"
+AUDIO_EXT = ".mp3"
+LOG_FILE = "transformation_log.json"
+METADATA_FILE = "videos.json"  # name of the json that stores video meta
+TRANSCRIBED_DIRNAME = "transcribed_videos"
+CHAR_MAP = {
+    "ä": "ae",
+    "ö": "oe",
+    "ü": "ue",
+    "ß": "ss",
+    "Ä": "Ae",
+    "Ö": "Oe",
+    "Ü": "Ue",
+}
+# Sentence delimiter – tuned for German & English.
+SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+# ---------------------------------------------------------------------------
+# UTILS ------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+def load_json(path: Path, default):
+    if path.exists():
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                content = fh.read().strip()
+                if not content:
+                    return default  # Handle empty file
+                return json.loads(content)
+        except json.JSONDecodeError:
+            print(f"[ERROR] Failed to parse JSON from {path}. Using default.")
+            return default
+    return default
+
+
+def save_json(obj, path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(obj, fh, ensure_ascii=False, indent=2)
+
+
+def extract_audio(video_path: Path, audio_path: Path):
+    cmd = [
+        "ffmpeg",
+        "-y",  # overwrite
+        "-i",
+        str(video_path),
+        "-vn",
+        "-acodec",
+        AUDIO_CODEC,
+        str(audio_path),
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+
+def clean_text(text: str) -> str:
+    for old, new in CHAR_MAP.items():
+        text = text.replace(old, new)
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# SENTENCE‑LEVEL CHUNKING ------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+def sentence_chunks(segments: List[Dict], min_chars: int = 60) -> List[Dict]:
+    chunks = []
+    current_words = []
+
+    def flush():
+        if not current_words:
+            return
+        start = float(current_words[0]["start"])
+        end   = float(current_words[-1]["end"])
+        text  = " ".join(w["text"] for w in current_words).strip()
+        cleaned = clean_text(text)
+
+        if chunks and len(chunks[-1]["text"]) + len(cleaned) < min_chars:
+            # merge tiny sentence into previous chunk
+            prev = chunks[-1]
+            prev["text"] += " " + cleaned
+            prev["end"]  = end
+        else:
+            chunks.append(
+                {"text": cleaned,
+                 "start": start,
+                 "end": end}
+            )
+        current_words.clear()
+
+    for seg in segments:
+        for w in seg.get("words", []):
+            current_words.append(w)
+            if w["text"].strip().endswith((".", "!", "?")):
+                flush()
+
+    flush()  # handle final tail
+    return chunks
+
+
+
+# ---------------------------------------------------------------------------
+# CORE TRANSCRIBE -------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+def transcribe_video(video_path: Path, meta: Dict, course_id: str, model_size: str):
+    """Return list[dict] of sentence-level chunks for *video_path*."""
+    tmp_audio = video_path.with_suffix(AUDIO_EXT)
+    print(f"[DEBUG] Transcribing audio from {tmp_audio}")
+
+    if not tmp_audio.exists():
+        extract_audio(video_path, tmp_audio)
+
+    model = load_model(model_size)
+    result = transcribe_timestamped(model, str(tmp_audio), language="de")  # force German; adjust if mixed
+
+    chunks = []
+    for sent in sentence_chunks(result["segments"]):
+        chunk = {
+            "source": "video",
+            "course_id": course_id,
+            "chunk_type": "transcript_sentence",
+            "content": sent["text"],
+            "metadata": {
+                "lecture_title": clean_text(meta.get("title", video_path.stem)),
+                "start": round(sent["start"], 2),
+                "end": round(sent["end"], 2),
+                "video_file": video_path.name,
+                "video_url": meta.get("detail_url") or meta.get("download_url"),
+                "collection": meta.get("collection_name"),
+            },
+        }
+        chunks.append(chunk)
+    return chunks
+
+
+# ---------------------------------------------------------------------------
+# PIPELINE --------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+def process_course(course_dir: Path, model_size: str):
+    course_id = course_dir.name.split("_")[-1]
+    videos_dir = course_dir / "videos"
+    if not videos_dir.is_dir():
+        return
+
+    meta_lookup: Dict[str, Dict] = {}
+    meta_file = videos_dir / METADATA_FILE
+    if meta_file.exists():
+        metas = load_json(meta_file, [])
+        meta_lookup = {
+            m.get("saved_filename", "").strip(): m for m in metas if "saved_filename" in m
+        }
+
+
+    log_path = videos_dir / Path(TRANSCRIBED_DIRNAME) / LOG_FILE
+    log = load_json(log_path, {})
+
+    sorted_row = sorted(videos_dir.glob("*.mp4"), key=lambda p: int(p.stem.split("_")[1]))
+    for mp4 in sorted_row:
+        if log.get(str(mp4)) == "transformed":
+            continue
+
+        meta = meta_lookup.get(mp4.name.strip())
+        
+        chunks = transcribe_video(mp4, meta, course_id, model_size)
+        if not chunks:
+            print(f"[WARN] No transcript chunks generated for {mp4}")
+
+        out_dir = videos_dir / TRANSCRIBED_DIRNAME
+        out_path = out_dir / f"{mp4.stem}.json"
+        save_json(chunks, out_path)
+
+        log[str(mp4)] = "transformed"
+        save_json(log, log_path)
+
+    # Remove temporary audio artifacts (*.mp3) to save space.
+    for audio in videos_dir.glob(f"*{AUDIO_EXT}"):
+        try:
+            audio.unlink()
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# ENTRY -----------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+def main():
+    ap = argparse.ArgumentParser(description="Create sentence-level transcript chunks from video files.")
+    #ap.add_argument("root", type=Path, help="Root directory that contains course_* folders")
+    ap.add_argument("--model-size", default=MODEL_SIZE, help="Whisper model size to load (default: small)")
+    args = ap.parse_args()
+
+    root = Path("./b_data").expanduser().resolve()
+    
+    if not root.is_dir():
+        sys.exit(f"Root path {root} does not exist or is not a directory.")
+
+    for course_dir in sorted(root.glob("course_*"), key=lambda p: int(p.name.split("_")[1])):
+        process_course(course_dir, args.model_size)
+
+    print("All videos processed.")
+
+
+if __name__ == "__main__":
+    main()

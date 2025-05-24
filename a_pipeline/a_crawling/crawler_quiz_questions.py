@@ -4,10 +4,11 @@ import html
 import base64
 from urllib.parse import urljoin, unquote, urlparse
 from bs4 import BeautifulSoup, NavigableString, Tag
-from .crawler_quiz_dd import download_image_moodle, parse_ddimageortext, get_logger
-
+from .crawler_quiz_dd import download_image_moodle, parse_ddimageortext
+from .utils.utils import get_logger
 
 logger = get_logger(__name__)
+
 BASE_URL = "https://isis.tu-berlin.de"
 
 def parse_question_blocks(html, driver=None, base_url=BASE_URL, data_dir="b_data", course_id="unknown"):
