@@ -5,7 +5,6 @@ import hashlib, json, re
 import fitz                         # PyMuPDF
 import pymupdf4llm as p4l
 from paddleocr import PaddleOCR     # OCR for non-text images
-from ...a_crawling.utils.utils import get_logger
 
 # ----------------------------- CONFIG ---------------------------------
 METADATA_FILE = "documents.json"
@@ -18,11 +17,10 @@ IMG_FORMAT    = "png"
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 IMG_DIR.mkdir(parents=True, exist_ok=True)
 
-logger = get_logger(__name__)
 ocr = PaddleOCR(lang=OCR_LANG)
 
 # ------------------------- NORMALISATION ------------------------------
-_bullet = r"[\u2022\-\*]"
+_bullet = r"[•*\u2022\-]"
 def normalize(text: str) -> str:
     text = re.sub(rf"(?<![\n{_bullet}0-9])\n(?![\n{_bullet}0-9])", " ", text)
     return re.sub(r"\s{2,}", " ", text).strip()
@@ -30,20 +28,15 @@ def normalize(text: str) -> str:
 # ---------------------- LOAD PDF + META -------------------------------
 doc_path      = Path("b_data/course_42969/document/files_pdf/42969_002_01_document.pdf")
 course_id     = doc_path.parts[1].split("_")[1]
-COURSE_META_PATH = Path("a_pipeline/a_crawling/course_ids/course_other.json")
-COURSE_LOOKUP = {
-    c["id"]: {
-        "name": c["name"],
-        "semester": c["semester"]
-    }
-    for c in json.load(open(COURSE_META_PATH))
-}
+course_name   = "Intro to Programming"
 
 meta_file     = doc_path.parent.parent / METADATA_FILE
 doc_meta      = {m["saved_filename"]: m for m in json.load(open(meta_file))}
 meta          = doc_meta.get(doc_path.name, {})
 file_md5      = hashlib.md5(open(doc_path, "rb").read()).hexdigest()
 out_path      = CHUNKS_DIR / f"{doc_path.stem}.jsonl"
+#out_path = CHUNKS_DIR / "pdf_parser_dup.jsonl"
+
 
 # --------------------------- CHUNK COLLECTION --------------------------
 chunks = []
@@ -71,52 +64,52 @@ for page_no, page in enumerate(md_pages):
     for para in filter(None, text.split("\n\n")):
         imgs = list(img_tag_re.finditer(para))
         if imgs:
+
+
             for m in imgs:
                 alt, rel_path = m.groups()
                 abs_path = str((Path(IMG_DIR) / Path(rel_path).name).resolve())
 
-                logger.debug(f"Checking alt='{alt}' → needs_ocr = {needs_ocr(alt)}")
+                print(f"[DEBUG] Checking alt='{alt}' → needs_ocr = {needs_ocr(alt)}")
 
                 text_from_img = ""
                 ran_ocr = False
                 if needs_ocr(alt):
                     try:
-                        logger.debug(f"Running OCR on {abs_path}")
-                        ocr_res = ocr.predict(abs_path)
-                        logger.debug(f"Raw OCR result: {ocr_res}")
+                        print(f"[DEBUG] Running OCR on {abs_path}")
+                        ocr_res = ocr.ocr(abs_path)
+                        print(f"[DEBUG] Raw OCR result: {ocr_res}")
                         text_from_img = " ".join(
                             text for result in ocr_res
                                 for text, score in zip(result.get("rec_texts", []), result.get("rec_scores", []))
                                 if score > 0.1
                         ).strip()
                         ran_ocr = bool(text_from_img)
-                        logger.debug(f"OCR text: '{text_from_img}'")
+                        print(f"[DEBUG] OCR text: '{text_from_img}'")
                     except Exception as e:
-                        logger.error(f"OCR failed on {abs_path}: {e}")
+                        print(f"[ERROR] OCR failed on {abs_path}: {e}")
 
                 chunks.append({
                     "chunk_type": "pdf_image",
-                    "content": text_from_img or alt.strip(),
-                    "page_no": page_no,
+                    "content":    text_from_img or alt.strip(),
+                    "page_no":    page_no,
                     "extra": {
                         "path": abs_path,
-                        "ocr": ran_ocr,
+                        "ocr":  ran_ocr,
                     }
                 })
             para = img_tag_re.sub("", para).strip()
             if not para:
                 continue
-
         cleaned = normalize(para) if not code_fence.search(para) else para
         chunks.append({
             "chunk_type": "pdf_chunk",
-            "content": cleaned,
-            "page_no": page_no,
-            "extra": None
+            "content":    cleaned,
+            "page_no":    page_no,
+            "extra":      None
         })
 
 # ------------------ FINALIZE CHUNKS WITH LINKS -------------------------
-ingest_ts = datetime.now(timezone.utc).isoformat()
 with open(out_path, "w", encoding="utf-8") as f:
     for i, chunk in enumerate(chunks):
         content_hash = hashlib.md5(chunk["content"].encode("utf-8")).hexdigest()
@@ -132,26 +125,25 @@ with open(out_path, "w", encoding="utf-8") as f:
             next_id = f"{file_md5}-{next_hash}"
 
         record = {
-            "source": "pdf",
+            "source":    "pdf",
             "course_id": course_id,
-            "course_name": COURSE_LOOKUP.get(course_id, {}).get("name", "Unknown Course"),
-            "course_semester": COURSE_LOOKUP.get(course_id, {}).get("semester", "Unknown Semester"),
             "chunk_type": chunk["chunk_type"],
-            "content": chunk["content"],
+            "content":    chunk["content"],
             "metadata": {
-                "title": meta.get("title", doc_path.stem),
+                "title":         meta.get("title", doc_path.stem),
+                "course_name":   course_name,
                 "document_file": doc_path.name,
-                "document_url": meta.get("download_url"),
-                "moodle_url": meta.get("moodle_url"),
+                "document_url":  meta.get("download_url"),
+                "moodle_url":    meta.get("moodle_url"),
                 "additional_info": {
-                    "page_number": chunk["page_no"] + 1,
-                    "chunk_id": chunk_id,
+                    "page_number":  chunk["page_no"] + 1,
+                    "chunk_id":     chunk_id,
                     "prev_chunk_id": prev_id,
                     "next_chunk_id": next_id,
-                    "ingest_ts": ingest_ts
+                    "ingest_ts":    datetime.now(timezone.utc).isoformat()
                 } | (chunk.get("extra") or {})
             }
         }
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-logger.info(f"✅ Finished: {out_path}")
+print("✅ Finished:", out_path)

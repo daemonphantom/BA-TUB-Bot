@@ -6,26 +6,9 @@ Each output JSON lives next to the originating video, inside a new directory
 called **transcribed_videos**.  One JSON file is produced *per video* and
 contains a list of chunks like
 
-    {
-      "source": "video",
-      "course_id": "30422",
-      "chunk_type": "transcript_sentence",
-      "content": "Hallo und herzlich willkommen …",
-      "metadata": {
-        "lecture_title": "Fakultät von 5 rekursiv berechnen",
-        "start": 0.00,
-        "end": 4.32,
-        "video_file": "30422_01_course_video.mp4",
-        "video_url": "https://isis.tu-berlin.de/…",
-        "collection": "Manni - die main() Funktion"
-      }
-    }
-
 Run the script once at the top level of your *b_data* tree:
 
-```bash
-python unified_transcriber.py /ba-tutorai/b_data
-```
+python -m a_pipeline.c_transcription.my_transcribe
 
 You may point `--model-size` at any Whisper size you have on disk ("small" by
 default).  Files that have already been processed are skipped via a
@@ -35,16 +18,13 @@ or re-run.
 
 import argparse
 import json
-import os
 import re
-import string
 import subprocess
 import sys
-import time
-import pprint
 from pathlib import Path
 from typing import Dict, List
-
+from datetime import datetime, timezone
+from ..a_crawling.utils.utils import get_logger
 from whisper_timestamped import transcribe_timestamped, load_model  # pip install whisper_timestamped
 
 # ---------------------------------------------------------------------------
@@ -65,10 +45,9 @@ CHAR_MAP = {
     "Ö": "Oe",
     "Ü": "Ue",
 }
-# Sentence delimiter – tuned for German & English.
-SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+SENTENCE_RE = re.compile(r"(?<=[.!?])\s+") # Sentence delimiter – tuned for German & English.
 
-
+logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # UTILS ------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
@@ -82,15 +61,16 @@ def load_json(path: Path, default):
                     return default  # Handle empty file
                 return json.loads(content)
         except json.JSONDecodeError:
-            print(f"[ERROR] Failed to parse JSON from {path}. Using default.")
+            logger.error(f"Failed to parse JSON from {path}. Using default.")
             return default
     return default
 
 
-def save_json(obj, path: Path):
+def save_jsonl(obj, path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
-        json.dump(obj, fh, ensure_ascii=False, indent=2)
+        for o in obj:
+            fh.write(json.dumps(o, ensure_ascii=False)+"\n")
 
 
 def extract_audio(video_path: Path, audio_path: Path):
@@ -112,6 +92,15 @@ def clean_text(text: str) -> str:
         text = text.replace(old, new)
     return text.strip()
 
+
+COURSE_META_PATH = Path("a_pipeline/a_crawling/course_ids/course_other.json")
+COURSE_LOOKUP = {
+    c["id"]: {
+        "name": c["name"],
+        "semester": c["semester"]
+    }
+    for c in load_json(COURSE_META_PATH, [])
+}
 
 # ---------------------------------------------------------------------------
 # SENTENCE‑LEVEL CHUNKING ------------------------------------------------------
@@ -160,29 +149,40 @@ def sentence_chunks(segments: List[Dict], min_chars: int = 60) -> List[Dict]:
 def transcribe_video(video_path: Path, meta: Dict, course_id: str, model_size: str):
     """Return list[dict] of sentence-level chunks for *video_path*."""
     tmp_audio = video_path.with_suffix(AUDIO_EXT)
-    print(f"[DEBUG] Transcribing audio from {tmp_audio}")
+    logger.info(f"Transcribing audio from {tmp_audio}")
 
     if not tmp_audio.exists():
         extract_audio(video_path, tmp_audio)
 
     model = load_model(model_size)
-    result = transcribe_timestamped(model, str(tmp_audio), language="de")  # force German; adjust if mixed
+    result = transcribe_timestamped(model, str(tmp_audio), language="de")  # force German
 
+    raw_chunks = sentence_chunks(result["segments"])
     chunks = []
-    for sent in sentence_chunks(result["segments"]):
+    ingest_ts = datetime.now(timezone.utc).isoformat()
+
+    for i, stc in enumerate(raw_chunks):
         chunk = {
             "source": "video",
             "course_id": course_id,
+            "course_name": COURSE_LOOKUP.get(course_id, {}).get("name", "Unknown Course"),
+            "course_semester": COURSE_LOOKUP.get(course_id, {}).get("semester", "Unknown Semester"),
             "chunk_type": "transcript_sentence",
-            "content": sent["text"],
+            "content": stc["text"],
             "metadata": {
                 "lecture_title": clean_text(meta.get("title", video_path.stem)),
-                "start": round(sent["start"], 2),
-                "end": round(sent["end"], 2),
+                "start": round(stc["start"], 2),
+                "end": round(stc["end"], 2),
                 "video_file": video_path.name,
                 "video_url": meta.get("detail_url") or meta.get("download_url"),
                 "collection": meta.get("collection_name"),
-            },
+                "additional_info": {
+                    "chunk_id": f"{course_id}_{video_path.stem}_{i}",
+                    "prev_chunk_id": f"{course_id}_{video_path.stem}_{i-1}" if i > 0 else None,
+                    "next_chunk_id": f"{course_id}_{video_path.stem}_{i+1}" if i < len(raw_chunks) - 1 else None,
+                    "ingest_ts": ingest_ts
+                }
+            }
         }
         chunks.append(chunk)
     return chunks
@@ -219,14 +219,14 @@ def process_course(course_dir: Path, model_size: str):
         
         chunks = transcribe_video(mp4, meta, course_id, model_size)
         if not chunks:
-            print(f"[WARN] No transcript chunks generated for {mp4}")
+            logger.warning(f"No transcript chunks generated for {mp4}")
 
         out_dir = videos_dir / TRANSCRIBED_DIRNAME
-        out_path = out_dir / f"{mp4.stem}.json"
-        save_json(chunks, out_path)
+        out_path = out_dir / f"{mp4.stem}.jsonl"
+        save_jsonl(chunks, out_path)
 
         log[str(mp4)] = "transformed"
-        save_json(log, log_path)
+        save_jsonl(log, log_path)
 
     # Remove temporary audio artifacts (*.mp3) to save space.
     for audio in videos_dir.glob(f"*{AUDIO_EXT}"):
@@ -254,7 +254,7 @@ def main():
     for course_dir in sorted(root.glob("course_*"), key=lambda p: int(p.name.split("_")[1])):
         process_course(course_dir, args.model_size)
 
-    print("All videos processed.")
+    logger.info("All videos processed.")
 
 
 if __name__ == "__main__":
