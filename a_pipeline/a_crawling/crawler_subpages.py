@@ -95,7 +95,9 @@ def crawl(driver, output_path):
 
             content = clean_course_text(box.get_text(separator=" ", strip=True))
 
-            subpages_data[title] = {
+            subpages_data = {
+                "chunk_type": "subpage",
+                "title": title,
                 "text": content.strip(),
                 "table": table_data,
                 "links": extracted_links,

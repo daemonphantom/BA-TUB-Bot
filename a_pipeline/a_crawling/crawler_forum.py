@@ -100,24 +100,23 @@ def get_discussion_links(driver, forum_url, thread_count):
 
 
 
-def parse_discussion(driver, discussion_url, forum_folder):
-    """
-    Step 3: Parse a full thread page, extracting all post metadata.
-    """
+def parse_discussion(driver, discussion_url, forum_folder, forum_name):
     driver.get(discussion_url)
 
     try:
-        # Wait up to 4 seconds for at least one post to be loaded.
         WebDriverWait(driver, 4).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.forumpost"))
         )
     except Exception as e:
         logger.warning("⚠️ No posts found in the discussion.")
         return []
-    
+
     soup = BeautifulSoup(driver.page_source, "html.parser")
     posts = soup.find_all("div", class_="forumpost")
-    post_data = []
+    post_chunks = []
+
+    is_announcement = "ankündigung" in forum_name.lower()
+
     for post in posts:
         try:
             post_id = post.get("data-post-id", "unknown")
@@ -125,46 +124,33 @@ def parse_discussion(driver, discussion_url, forum_folder):
             subject = header.find("h3").text.strip() if header and header.find("h3") else "No subject"
             author = header.find("a").text.strip() if header and header.find("a") else "Unknown"
             datetime_val = header.find("time")["datetime"] if header and header.find("time") else "Unknown"
-            
+
             content_div = post.find("div", class_="post-content-container")
-            # Convert <a> tags to "text (URL)"
+
+            links = []
             for a in content_div.find_all("a"):
-                text = a.get_text()
                 href = a.get("href")
+                anchor = a.text.strip()
                 if href:
-                    a.replace_with(f"{text} ({href})")
+                    links.append({"text": anchor, "url": href})
+                    a.replace_with(f"{anchor} ({href})")
 
             content = content_div.get_text(" ", strip=True)
 
-            # Get response link (structure)
             response_anchor = post.find("a", title=lambda t: t and "Ursprungsbeitrag" in t)
+            response_to = None
+            is_reply = False
+            is_thread_root = True
             if response_anchor:
                 raw_response_to = response_anchor["href"].split("#")[-1]
-                response_to = raw_response_to.replace("p", "") if raw_response_to.startswith("p") else raw_response_to  # reply_to IDs start with "p", thread IDs don't; remove "p"
+                response_to = raw_response_to.replace("p", "") if raw_response_to.startswith("p") else raw_response_to
                 is_reply = True
                 is_thread_root = False
-            else:
-                response_to = None
-                is_reply = False
-                is_thread_root = True
 
-            # Find image attachments
             attachment_imgs = post.find_all("img")
-            attachment_urls = []
-
-            for img in attachment_imgs:
-                src = img.get("src")
-                if (
-                    src
-                    and "pluginfile.php" in src
-                    and "user/icon" not in src  # ❌ exclude profile pictures
-                    and src not in attachment_urls
-                ):
-                    attachment_urls.append(src)
-
+            attachment_urls = [img.get("src") for img in attachment_imgs if img.get("src") and "pluginfile.php" in img.get("src") and "user/icon" not in img.get("src")]
             has_attachments = len(attachment_urls) > 0
 
-            # Download attachments
             local_attachments = download_attachments(
                 attachment_urls,
                 save_dir=os.path.join(forum_folder, "attachments"),
@@ -172,24 +158,32 @@ def parse_discussion(driver, discussion_url, forum_folder):
                 driver=driver
             )
 
-            post_data.append({
-                "post_id": post_id,
-                "subject": subject,
-                "author": author,
-                "datetime": datetime_val,
-                "permalink": f"{discussion_url}#p{post_id}",
+            post_chunks.append({
+                "chunk_type": "forum_post",
                 "content": content,
-                "response_to": response_to,
-                "is_reply": is_reply,
-                "is_thread_root": is_thread_root,
-                "has_attachments": has_attachments,
-                "attachments": attachment_urls,
-                "local_attachments": local_attachments
+                "metadata": {
+                    "post_id": post_id,
+                    "subject": subject,
+                    "author": author,
+                    "datetime": datetime_val,
+                    "permalink": f"{discussion_url}#p{post_id}",
+                    "response_to": response_to,
+                    "is_reply": is_reply,
+                    "is_thread_root": is_thread_root,
+                    "is_announcement": is_announcement,
+                    "forum_name": forum_name,
+                    "has_attachments": has_attachments,
+                    "attachments": attachment_urls,
+                    "local_attachments": local_attachments,
+                    "links": links
+                }
             })
         except Exception as e:
             logger.warning(f"⚠️ Error parsing post: {e}")
             continue
-    return post_data
+
+    return post_chunks
+
 
 
 def download_attachments(attachment_urls, save_dir, post_id, driver=None):
@@ -262,14 +256,9 @@ def crawl(driver, forum_folder):
 
         for thread in threads:
             logger.info(f"   🧵 Thread: {thread['title']}")
-            posts = parse_discussion(driver, thread["url"], forum_folder)
-            forum_data.append({
-                "thread_title": thread["title"],
-                "thread_url": thread["url"],
-                "posts": posts
-            })
+            posts = parse_discussion(driver, thread["url"], forum_folder, forum["forum_name"])
+            forum_data.extend(posts)
 
-        # Save as JSON with new filename style
         safe_name = slugify(forum["forum_name"])
         forum_path = os.path.join(forum_folder, f"{course_id}_forum_{i:02d}_{safe_name}.json")
         with open(forum_path, "w", encoding="utf-8") as f:

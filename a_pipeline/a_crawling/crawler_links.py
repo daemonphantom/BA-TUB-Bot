@@ -95,6 +95,7 @@ def crawl(driver, output_path):
             logger.info(f"🔗 Found link -> {title} -> {actual_url}")
 
             link_entries.append({
+                "chunk_type": "external_link",
                 "title": title,
                 "description": description,
                 "target_url": actual_url,

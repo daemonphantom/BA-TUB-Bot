@@ -71,7 +71,9 @@ def crawl(driver, output_path):
                 extracted_links.append({"text": text, "url": href})
                 a.replace_with(f"[{text}]({href})")
 
-            sections[section_name] = {
+            sections = {
+                "chunk_type": "mainpage",
+                "title": section_name,
                 "text": content.strip(),
                 "links": extracted_links,
                 "table": table_data,

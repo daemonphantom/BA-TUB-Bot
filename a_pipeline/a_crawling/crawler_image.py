@@ -58,6 +58,7 @@ def crawl(driver, output_path):
             if saved_path:
                 logger.info(f"✅ Downloaded image: {saved_path}")
                 image_entries.append({
+                    "chunk_type": "image",
                     "title": title,
                     "moodle_url": moodle_url,
                     "image_url": img_url,

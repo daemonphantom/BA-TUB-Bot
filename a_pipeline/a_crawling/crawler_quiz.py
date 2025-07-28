@@ -102,11 +102,42 @@ def crawl_quiz(driver, quiz, save_dir, course_id, idx):
         return None, 0
 
     # Seiten durchgehen
-    all_questions = []
     pagecounter = 0
     while True:
         html = driver.page_source
-        all_questions.extend(parse_question_blocks(html, driver=driver, base_url=BASE_URL, data_dir="b_data", course_id=course_id))
+        questions = parse_question_blocks(html, driver=driver, base_url=BASE_URL, data_dir="b_data", course_id=course_id)
+        
+        # Save each question individually with options and review
+        for question in questions:
+            question_id = question.get("number", f"unknown_{pagecounter}")
+            safe_title = slugify(quiz["title"])
+            question_path = os.path.join(save_dir, f"{course_id}_quiz_{idx:02d}_{safe_title}_question_{question_id}.json")
+            
+            # Include review blocks if available
+            review_blocks = []
+            if _can_show_review(grading):
+                attempt_id, cmid_val = _extract_attempt_and_cmid(soup, cmid)
+                if attempt_id:
+                    try:
+                        _finish_attempt(driver, attempt_id, cmid_val)
+                        review_blocks = _parse_review_blocks(driver.page_source, data_dir=save_dir, course_id=course_id, cmid=cmid_val, driver=driver)
+                        logger.info(f"📋 Review-Seite geparsed - {len(review_blocks)} outcomes gefunden.")
+                    except Exception as e:
+                        logger.warning(f"⚠️  Review-Seite konnte nicht geladen werden: {e}")
+
+            # Save question with options and review
+            with open(question_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "quiz_title": quiz["title"],
+                    "description": desc,
+                    "time_limit": time_limit,
+                    "grading_method": grading,
+                    "passing_grade": passing,
+                    "question": question,
+                    "review": review_blocks
+                }, f, ensure_ascii=False, indent=2)
+            logger.info(f"✅ Frage {question_id} gespeichert: {question_path}")
+        
         soup = BeautifulSoup(html, "html.parser")
         if is_last_page(soup):
             break
@@ -122,33 +153,7 @@ def crawl_quiz(driver, quiz, save_dir, course_id, idx):
             logger.warning("⚠️  Konnte nicht zur nächsten Seite navigieren.")
             break
 
-    review_blocks = []
-    if _can_show_review(grading):
-        # retrieve attempt & cmid from the last page we just parsed
-        attempt_id, cmid_val = _extract_attempt_and_cmid(soup, cmid)
-        if attempt_id:
-            try:
-                _finish_attempt(driver, attempt_id, cmid_val)
-                review_blocks = _parse_review_blocks(driver.page_source, data_dir=save_dir, course_id=course_id, cmid=cmid_val, driver=driver)
-                logger.info(f"📋 Review-Seite geparsed - {len(review_blocks)} outcomes gefunden.")
-            except Exception as e:
-                logger.warning(f"⚠️  Review-Seite konnte nicht geladen werden: {e}")
-
-    safe = slugify(quiz["title"])
-    path = os.path.join(save_dir, f"{course_id}_quiz_{idx:02d}_{safe}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({
-            "title"          : quiz["title"],
-            "description"    : desc,
-            "time_limit"     : time_limit,
-            "grading_method" : grading,
-            "passing_grade"  : passing,
-            "question_count" : len(all_questions),
-            "questions"      : all_questions,
-            "review"         : review_blocks
-        }, f, ensure_ascii=False, indent=2)
-    return path, len(all_questions)
-
+    return None, len(questions)
 
 def crawl(driver, quiz_folder):
     course_id = parse_qs(urlparse(driver.current_url).query).get("id", ["unknown"])[0]
