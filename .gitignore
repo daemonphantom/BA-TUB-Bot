@@ -3,7 +3,7 @@ a_pipeline/pipenv
 a_pipeline/c_transcription/transcribe/transEnv
 **/.env
 **/__pycache__
-
+.venvs
 # Ignore IDE settings (except .vscode if you want to share it)
 .vscode/
 !.vscode/settings.json
