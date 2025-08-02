@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from .navigator import open_course_by_id
 from .crawler_data_storage import init_course_dir, save_json
-# Import all content-type crawler modules
+
 from . import crawler_document, crawler_feedback, crawler_forum, crawler_glossaries, crawler_image, crawler_links, crawler_mainpage, crawler_questionnaire, crawler_quiz, crawler_resources, crawler_subpages, crawler_videos
 from .utils.utils import get_logger
 
@@ -11,11 +11,10 @@ logger = get_logger(__name__)
 def crawl_course(driver, course_id: str):
     """
     Crawl all relevant data for a single course.
-    Each module must implement a crawl() function.
-    For the PDF module, we pass the destination folder as an extra argument.
     """
-    enabled_modules = ["glossaries", "image", "quiz", "forum", "links", "videos", "mainpage", "subpages", "resources", "document"]  # Adjust as needed                                                                       !!!!!!!!!!!!!!!!!!!!!!!!
-
+    # Enabled Modules. Adjust as needed:
+    enabled_modules = ["forums"]
+    #"glossaries", "image", "quiz", "forums", "links", "videos", "mainpage", "subpages", "resources", "document"
 
     logger.info(f"📘 Crawling course: {course_id}")
 
@@ -27,7 +26,7 @@ def crawl_course(driver, course_id: str):
     # Here, the pdf crawler expects an extra argument, so we wrap it in a lambda.
     crawler_map = {
         "quiz":      (crawler_quiz.crawl,         course_path / "quizzes"),
-        "forums":       (crawler_forum.crawl,        course_path / "forums"),
+        "forums": (lambda driver, path: crawler_forum.crawl(driver, path, course_metadata), course_path / "forums"),
         "glossaries":   (crawler_glossaries.crawl, course_path / "glossaries"),
         "links":        (crawler_links.crawl,        course_path / "links" / "links.json"),
         "videos":       (crawler_videos.crawl,       course_path / "videos"),
@@ -41,6 +40,18 @@ def crawl_course(driver, course_id: str):
         #"questionnaire":(questionnaire.crawl,course_path / "questionnaire"),
     }
 
+    ##########
+    # Load course metadata once
+    COURSE_METADATA_PATH = os.path.join("A_pipeline", "a_crawling", "course_ids", "all_courses.json")
+    with open(COURSE_METADATA_PATH, "r", encoding="utf-8") as f:
+        all_courses = json.load(f)
+    course_lookup = {str(c["id"]): c for c in all_courses}
+    course_metadata = course_lookup.get(str(course_id), {
+        "id": str(course_id),
+        "name": "Unknown Course",
+        "semester": "Unknown Semester"
+    })
+    logger.info(f"📚 Using course metadata: {course_metadata}")
 
     # Step 4: Iterate through each content type, crawl, and save the results.
     for section in enabled_modules:
@@ -75,7 +86,7 @@ if __name__ == '__main__':
     import json
     from seleniumwire import webdriver
     from selenium.webdriver.chrome.options import Options
-    from a_pipeline.a_crawling.login import login
+    from A_pipeline.a_crawling.login import login
     from dotenv import load_dotenv
 
     load_dotenv()

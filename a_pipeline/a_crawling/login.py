@@ -3,7 +3,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
-import time
 import os
 from .utils.utils import get_logger
 
@@ -14,38 +13,52 @@ load_dotenv()
 username = os.getenv("TUB_USERNAME")
 password = os.getenv("TUB_PASSWORD")
 
-def login(driver, username, password):
-    # Step 1: Open the ISIS login page
+
+def login(driver, username, password, timeout=10):
+    logger.info("🔐 Opening ISIS login page...")
     driver.get("https://isis.tu-berlin.de/login/index.php")
 
-    # Step 2: Click the "TU-Login" button by ID
-    tu_login_btn = WebDriverWait(driver, 5).until(
-        EC.element_to_be_clickable((By.ID, "shibbolethbutton"))
-    )
-    tu_login_btn.click()
+    try:
+        # Wait for the TU-Login button
+        tu_login_btn = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable((By.ID, "shibbolethbutton"))
+        )
+        tu_login_btn.click()
+        logger.info("🔁 TU Login button clicked.")
 
-    # Step 3: Wait for redirect and login form
-    WebDriverWait(driver, 5).until(
-        EC.presence_of_element_located((By.ID, "username"))
-    )
+        # Wait for username and password input
+        WebDriverWait(driver, timeout).until(
+            EC.visibility_of_element_located((By.ID, "username"))
+        )
 
-    # Step 4: Fill in username and password
-    driver.find_element(By.ID, "username").send_keys(username)
-    driver.find_element(By.ID, "password").send_keys(password)
+        WebDriverWait(driver, timeout).until(
+            EC.visibility_of_element_located((By.ID, "password"))
+        )
 
-    # Step 5: Submit the form
-    driver.find_element(By.ID, "login-button").click()
+        # Fill
+        driver.find_element(By.ID, "username").send_keys(username)
+        driver.find_element(By.ID, "password").send_keys(password)
 
-    # Optional: Wait for login to complete (adjust this as needed)
-    time.sleep(2)
-    logger.info("✅ Logged in successfully!")
+        # Submit
+        driver.find_element(By.ID, "login-button").click()
+        logger.info("🚀 Submitted login form.")
+
+        # Wait for page to load after login
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.ID, "page-header"))  # TWEAK!
+        )
+
+        logger.info("✅ Logged in successfully!")
+
+    except Exception as e:
+        logger.error(f"❌ Login failed: {e}")
+        raise e
 
 if __name__ == "__main__":
-    # Create a Selenium WebDriver (e.g. with Chrome)
-    options = webdriver.ChromeOptions()
+    options = webdriver.ChromeOptions() # Selenium WebDriver with Chrome
     options.add_argument("--start-maximized")
     
-    # Optional: run headless if you don't want to see the browser
+    # remove hashtag below for headless- if you dont want to see the browser
     # options.add_argument("--headless")
     
     driver = webdriver.Chrome(options=options)

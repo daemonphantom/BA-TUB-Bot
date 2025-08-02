@@ -1,3 +1,11 @@
+# INSTALLATION
+
+three venvs: 
+1. pipeline-env: pip install requirements-pipeline.txt
+2. mpv-env: pip install requirements-mvp.txt
+3. transcribe-env: ...
+
+
 # TutorAI: A Smart Assistant for TU Berlin
 
 Welcome to **TutorAI**, a research-driven project developed as part of my Bachelor’s thesis at **Technische Universität Berlin**. This system is designed to build an intelligent assistant that helps both **students** and **teachers** engage more effectively with university course content.

@@ -16,7 +16,7 @@ Follow these steps to get your Tutor AI transcriber up and running:
 1. **Create Virtual Environment**
 
    ```bash
-   virtualenv transEnv
+   virtualenv transcribe-env
    ```
    
 2. **Start Environment**

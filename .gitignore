@@ -1,6 +1,4 @@
 # Ignore virtual environments
-a_pipeline/pipenv
-a_pipeline/c_transcription/transcribe/transEnv
 **/.env
 **/__pycache__
 .venvs
@@ -24,3 +22,4 @@ b_data/
 # Ignore parsed output
 **/files_pdf_parsed/
 **/files_pdf/*.md
+A_pipeline/b_parsing/old_delete

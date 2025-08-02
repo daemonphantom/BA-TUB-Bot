@@ -72,6 +72,10 @@ def save_jsonl(obj, path: Path):
         for o in obj:
             fh.write(json.dumps(o, ensure_ascii=False)+"\n")
 
+def save_json(obj, path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(obj, fh, ensure_ascii=False, indent=2)
 
 def extract_audio(video_path: Path, audio_path: Path):
     cmd = [
@@ -103,42 +107,61 @@ COURSE_LOOKUP = {
 }
 
 # ---------------------------------------------------------------------------
-# SENTENCE‑LEVEL CHUNKING ------------------------------------------------------
+# WINDOWED CHUNKING (character-capped, no external tokenizer)
 # ---------------------------------------------------------------------------
+def windowed_chunks(segments,
+                    *,
+                    sent_per_win: int = 3,
+                    stride: int = 1,
+                    max_chars: int = 1200):
+    """
+    Turn Whisper 'segments' -> overlapping windows of N sentences.
+    • No tiktoken / tokenizer dependency.
+    • Each chunk is capped to `max_chars` characters (≈ 256 Llama tokens).
+    """
+    sentences = []
+    current   = []
 
-def sentence_chunks(segments: List[Dict], min_chars: int = 60) -> List[Dict]:
-    chunks = []
-    current_words = []
-
-    def flush():
-        if not current_words:
-            return
-        start = float(current_words[0]["start"])
-        end   = float(current_words[-1]["end"])
-        text  = " ".join(w["text"] for w in current_words).strip()
-        cleaned = clean_text(text)
-
-        if chunks and len(chunks[-1]["text"]) + len(cleaned) < min_chars:
-            # merge tiny sentence into previous chunk
-            prev = chunks[-1]
-            prev["text"] += " " + cleaned
-            prev["end"]  = end
-        else:
-            chunks.append(
-                {"text": cleaned,
-                 "start": start,
-                 "end": end}
-            )
-        current_words.clear()
-
+    # -------- 1) explode word stream into sentences with timestamps --------
     for seg in segments:
-        for w in seg.get("words", []):
-            current_words.append(w)
+        for w in seg["words"]:
+            current.append(w)
             if w["text"].strip().endswith((".", "!", "?")):
-                flush()
+                sentences.append(current)
+                current = []
+    if current:
+        sentences.append(current)
 
-    flush()  # handle final tail
+    # -------- 2) slide a window over those sentences -----------------------
+    chunks, i = [], 0
+    while i < len(sentences):
+        window = sentences[i:i + sent_per_win]
+
+        # assemble raw text for the window
+        def join_words(sent):
+            return " ".join(w["text"] for w in sent)
+        text  = " ".join(join_words(sent) for sent in window).strip()
+
+        # shrink window if over the char budget
+        while len(text) > max_chars and len(window) > 1:
+            window = window[:-1]           # drop last sentence
+            text   = " ".join(join_words(s) for s in window).strip()
+
+        # fallback: single very-long sentence? keep it anyway
+        if not window:
+            window = [sentences[i]]
+            text   = join_words(window[0]).strip()
+
+        chunks.append({
+            "text":  text,
+            "start": float(window[0][0]["start"]),
+            "end":   float(window[-1][-1]["end"]),
+        })
+        i += stride                        # overlap (sent_per_win-stride) sentences
+
     return chunks
+
+
 
 
 
@@ -157,7 +180,11 @@ def transcribe_video(video_path: Path, meta: Dict, course_id: str, model_size: s
     model = load_model(model_size)
     result = transcribe_timestamped(model, str(tmp_audio), language="de")  # force German
 
-    raw_chunks = sentence_chunks(result["segments"])
+    # raw_chunks = sentence_chunks(result["segments"])
+    raw_chunks = windowed_chunks(result["segments"],
+                                sent_per_win=3,
+                                stride=1,
+                                max_chars=1200)
     chunks = []
     ingest_ts = datetime.now(timezone.utc).isoformat()
 
@@ -167,7 +194,7 @@ def transcribe_video(video_path: Path, meta: Dict, course_id: str, model_size: s
             "course_id": course_id,
             "course_name": COURSE_LOOKUP.get(course_id, {}).get("name", "Unknown Course"),
             "course_semester": COURSE_LOOKUP.get(course_id, {}).get("semester", "Unknown Semester"),
-            "chunk_type": "transcript_sentence",
+            "chunk_type": "transcript_window",
             "content": stc["text"],
             "metadata": {
                 "lecture_title": clean_text(meta.get("title", video_path.stem)),
@@ -226,7 +253,7 @@ def process_course(course_dir: Path, model_size: str):
         save_jsonl(chunks, out_path)
 
         log[str(mp4)] = "transformed"
-        save_jsonl(log, log_path)
+        save_json(log, log_path)
 
     # Remove temporary audio artifacts (*.mp3) to save space.
     for audio in videos_dir.glob(f"*{AUDIO_EXT}"):
@@ -246,8 +273,9 @@ def main():
     ap.add_argument("--model-size", default=MODEL_SIZE, help="Whisper model size to load (default: small)")
     args = ap.parse_args()
 
-    root = Path("./b_data").expanduser().resolve()
-    
+    #root = Path("./b_data").expanduser().resolve()
+    root = Path("./simplified_llm").expanduser().resolve()    
+
     if not root.is_dir():
         sys.exit(f"Root path {root} does not exist or is not a directory.")
 
