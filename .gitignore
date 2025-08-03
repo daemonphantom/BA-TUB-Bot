@@ -23,3 +23,5 @@ b_data/
 **/files_pdf_parsed/
 **/files_pdf/*.md
 A_pipeline/b_parsing/old_delete
+A_pipeline/b_parsing/new/*.jsonl
+A_pipeline/b_parsing/*.pdf

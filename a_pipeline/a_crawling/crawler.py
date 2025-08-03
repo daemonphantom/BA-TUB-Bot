@@ -49,7 +49,8 @@ def crawl_course(driver, course_id: str):
     course_metadata = course_lookup.get(str(course_id), {
         "id": str(course_id),
         "name": "Unknown Course",
-        "semester": "Unknown Semester"
+        "semester": "Unknown Semester",
+        "faculty": "Unknown Faculty"
     })
     logger.info(f"📚 Using course metadata: {course_metadata}")
 
