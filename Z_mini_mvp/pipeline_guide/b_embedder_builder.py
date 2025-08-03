@@ -17,15 +17,3 @@ class TextEmbedder:
     def embed_batch(self, texts: list[str]) -> np.ndarray:
         """Convert multiple texts to embeddings (more efficient)"""
         return self.model.encode(texts)
-
-""" 
-# Test the embedder
-embedder = TextEmbedder()
-
-# Test with your forum post
-test_text = "Bei der Portfoliopunkte Bewertung steht unten Kurs gesamt"
-embedding = embedder.embed_text(test_text)
-print(f"Text: {test_text}")
-print(f"Embedding shape: {embedding.shape}")
-print(f"First 5 values: {embedding[:5]}")
-"""
