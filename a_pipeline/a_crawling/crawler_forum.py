@@ -207,6 +207,7 @@ def parse_thread(driver, discussion_url, forum_folder, course_metadata):
     for post in posts:
         try:
             post_id = post.get("data-post-id", "unknown")
+            thread_id = parse_qs(urlparse(discussion_url).query).get("d", ["unknown"])[0]
             header = post.find("header")
             subject = header.find("h3").text.strip() if header and header.find("h3") else "No subject"
             author = header.find("a").text.strip() if header and header.find("a") else "Unknown"
@@ -214,11 +215,16 @@ def parse_thread(driver, discussion_url, forum_folder, course_metadata):
             
             content_div = post.find("div", class_="post-content-container")
             # Make <a> tags visible as (URL)
+            links = []
             for a in content_div.find_all("a"):
-                text = a.get_text()
+                text = a.get_text(strip=True)
                 href = a.get("href")
                 if href:
-                    a.replace_with(f"{text} ({href})")
+                    href = unquote(href)
+                    links.append({
+                        "text": text,
+                        "url": href
+                    })
 
             content = content_div.get_text(" ", strip=True)
 
@@ -263,6 +269,7 @@ def parse_thread(driver, discussion_url, forum_folder, course_metadata):
                 "metadata": {
                     "course": course_metadata,
                     "post_id": post_id,
+                    "thread_id": thread_id,
                     "subject": subject,
                     "author": author,
                     "post_datetime": post_datetime,
@@ -273,6 +280,7 @@ def parse_thread(driver, discussion_url, forum_folder, course_metadata):
                     "has_attachments": has_attachments,
                     "attachments": attachment_urls,
                     "local_attachments": local_attachments,
+                    "links": links,
                     "crawl_datetime": datetime.now(timezone.utc).isoformat(timespec='minutes')
                 }
             })
@@ -307,13 +315,13 @@ def download_attachments(attachment_urls, save_dir, post_id, driver=None):
             local_paths.append(filepath)
             continue
 
-        for attempt in range(3):  # Retry up to 3 times
+        for attempt in range(3):  # retry 3 times
             try:
                 response = session.get(url, stream=True, timeout=10)
                 content_type = response.headers.get("Content-Type", "")
 
                 if response.status_code == 200 and content_type.startswith("image/"):
-                    # Fix extension if missing or incorrect
+                    # fix extension if missing or incorrect
                     if not ext:
                         if "png" in content_type:
                             ext = ".png"
@@ -332,10 +340,10 @@ def download_attachments(attachment_urls, save_dir, post_id, driver=None):
 
                     local_paths.append(filepath)
                     logger.info(f"✅ Downloaded image: {url} → {filepath}")
-                    break  # Success
+                    break
                 else:
                     logger.warning(f"⚠️ Skipped non-image or failed download: {url} ({content_type})")
-                    break  # Don't retry on non-image
+                    break  # don't retry on non-image
             except requests.exceptions.RequestException as e:
                 if attempt == 2:
                     logger.warning(f"⚠️ Failed after retries: {url} - {e}")
