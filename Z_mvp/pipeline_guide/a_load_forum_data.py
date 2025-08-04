@@ -1,15 +1,16 @@
 import json
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Optional
 
 @dataclass
 class ForumPost:
-    """Simple data structure for a forum post"""
     thread_title: str
     thread_url: str
+    # posts:
     chunk_type: str
     content: str
-
+    #   metadata:
+    #       course:
     course_id: str
     course_name: str
     course_semester: str
@@ -23,11 +24,14 @@ class ForumPost:
     permalink: str
     is_reply: bool
     is_thread_root: bool
-
     has_attachments: bool
-    #attachments:
-    #local_attachments:
+    # attachments:
+    attachments: Optional[list[str]]
+    local_attachments: Optional[list[str]]
+
     #links:
+    links: Optional[list[Dict[str, str]]]
+
     crawl_datetime: str
     response_to: Optional[str] = None
 
@@ -35,10 +39,8 @@ class ForumPost:
         return self.content.strip()
 
 def load_forum_data(json_file: str) -> list[ForumPost]:
-    """Load and parse forum data - Step 1"""
-
     with open(json_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)  # this is a list of threads
+        data = json.load(f)
 
     posts = []
     for thread in data:
@@ -65,6 +67,9 @@ def load_forum_data(json_file: str) -> list[ForumPost]:
                 is_reply=metadata["is_reply"],
                 is_thread_root=metadata["is_thread_root"],
                 has_attachments=metadata["has_attachments"],
+                #attachments=metadata.get("attachments", []),
+                #local_attachments=metadata.get("local_attachments", []),
+                #links=metadata.get("links", []),
                 crawl_datetime=metadata["crawl_datetime"],
                 response_to=metadata.get("response_to")
             )
@@ -73,10 +78,9 @@ def load_forum_data(json_file: str) -> list[ForumPost]:
     return posts
 
 
-
 if __name__ == "__main__":
     posts = load_forum_data('./B_data/course_40280/forums/40280_forum_02_studierendenforum__2025-08-03T00-26+00-00.json')
     #posts = load_forum_data('./B_data/course_40280/forums/40280_forum_01_ankuendigungen__2025-08-03T00-24+00-00.json')
 
-    print(f"Loaded {len(posts)} posts")
-    print(f"Response_to: {posts[3].response_to}")
+    print(f"✅ Loaded {len(posts)} posts")
+    print(f"✅ Response_to: {posts[3].response_to}")

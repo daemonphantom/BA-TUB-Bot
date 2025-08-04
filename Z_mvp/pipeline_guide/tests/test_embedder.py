@@ -1,5 +1,5 @@
-from .a_load_forum_data import load_forum_data
-from .b_embedder_builder import TextEmbedder
+from ..a_load_forum_data import load_forum_data
+from ..b_embedder import TextEmbedder
 from sklearn.metrics.pairwise import cosine_similarity
 
 

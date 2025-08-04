@@ -1,7 +1,7 @@
 import argparse
-from .b_embedder_builder import TextEmbedder
-from .d_neo import GraphStore
-from .b_vector_search import VectorSearch
+from .b_embedder import TextEmbedder
+from .c_neo import GraphStore
+from .d_vector_search import VectorSearch
 
 def main():
     ap = argparse.ArgumentParser()

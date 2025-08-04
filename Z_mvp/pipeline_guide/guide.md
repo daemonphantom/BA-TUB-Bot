@@ -71,6 +71,7 @@ python -m Z_mini_mvp.pipeline_guide.d_neoloader
 ### 5. Query the System
 ```bash
 python -m Z_mini_mvp.e_query --query "Portfolio Punkte Bewertung" --limit 3
+python -m e_query --query "debugging help" --author "professor_smith" --limit 3
 ```
 
 

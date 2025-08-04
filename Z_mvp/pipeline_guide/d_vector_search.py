@@ -1,4 +1,4 @@
-from .d_neo import GraphStore
+from .c_neo import GraphStore
 import numpy as np
 
 class VectorSearch:
@@ -36,7 +36,7 @@ class VectorSearch:
             )
             return [dict(r) for r in result]
         
-    # FILTERS - CONSTRAINTS
+    # VECTOR SEARCH + CONSTRAINTS (GRAPHRAG)
     def search_similar_posts_filtered(
         self,
         query_embedding: np.ndarray,

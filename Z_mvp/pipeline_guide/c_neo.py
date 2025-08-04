@@ -1,7 +1,7 @@
 from neo4j import GraphDatabase
 from typing import Iterable
 import numpy as np
-from .a_load_forum_data import ForumPost  # fixed import
+from .a_load_forum_data import ForumPost
 
 
 class GraphStore:
@@ -31,7 +31,6 @@ class GraphStore:
             # \"\"\")
 
     def store_post(self, post: ForumPost, embedding: np.ndarray):
-        """Upsert a single post with its relationships"""
         emb_list = embedding.astype(float).tolist()
 
         with self.driver.session() as session:
@@ -98,7 +97,6 @@ class GraphStore:
         """Create reply edges after all posts are inserted"""
         with self.driver.session() as session:
             for post in posts:
-                # Corrected: use response_to
                 if post.is_reply and post.response_to:
                     session.run(
                         """
